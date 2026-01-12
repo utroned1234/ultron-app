@@ -71,22 +71,43 @@ export default function PaksPage() {
     return (profit * 30).toFixed(2)
   }
 
+  const getPackageMotivation = (level: number) => {
+    switch (level) {
+      case 1:
+        return 'Empieza con fuerza y construye tu base hoy.'
+      case 2:
+        return 'Sigue escalando: cada paso suma a tu meta.'
+      case 3:
+        return 'Equilibrio ideal para crecer con disciplina.'
+      case 4:
+        return 'Impulsa tus resultados con decision diaria.'
+      case 5:
+        return 'Acelera tu camino: nivel premium de progreso.'
+      case 6:
+        return 'Consolida liderazgo y expande tu red.'
+      case 7:
+        return 'Maximo nivel: vision, enfoque y constancia.'
+      default:
+        return 'Aprovecha esta oportunidad hoy.'
+    }
+  }
+
   const getPackageHook = (level: number) => {
     switch (level) {
       case 1:
-        return 'Empieza hoy: cupos limitados en este nivel.'
+        return 'Empieza con el pak que se ajuste a tu necesidad.'
       case 2:
-        return 'Sube de nivel y acelera tu crecimiento.'
+        return 'Da el siguiente paso con una meta clara.'
       case 3:
-        return 'El mas elegido: equilibrio entre costo y retorno.'
+        return 'Equilibrio ideal entre inversion y resultados.'
       case 4:
-        return 'Mas retorno diario para quienes van en serio.'
+        return 'Mayor impulso diario para avanzar con firmeza.'
       case 5:
-        return 'Nivel premium: resultados mas rapidos.'
+        return 'Nivel premium para acelerar tu progreso.'
       case 6:
-        return 'Maxima proyeccion, para lideres.'
+        return 'Alta proyeccion para quienes buscan expandirse.'
       case 7:
-        return 'Exclusivo: el nivel mas alto del programa.'
+        return 'Nivel superior para metas ambiciosas.'
       default:
         return 'Aprovecha esta oportunidad hoy.'
     }
@@ -126,6 +147,12 @@ export default function PaksPage() {
           {packages.map((pkg) => {
             const isPurchased = purchasedPackageIds.includes(pkg.id)
             const isDisabled = !pkg.is_enabled || isPurchased
+            const requirementText =
+              pkg.level === 6
+                ? 'Requisitos para activar este pak: 20 activos en tu primer y segundo nivel'
+                : pkg.level === 7
+                  ? 'Requisitos para activar este pak: 30 activos primer, segundo y tercer nivel'
+                  : ''
             return (
             <Card key={pkg.id} glassEffect>
               <div className="space-y-4">
@@ -135,11 +162,16 @@ export default function PaksPage() {
                     Nivel {pkg.level}
                   </p>
                   <p className="text-xs text-text-secondary mt-2">
-                    Por la compra de este pak participas sorteo de una moto
+                    {getPackageMotivation(pkg.level)}
                   </p>
                   <p className="text-xs text-gold mt-1">
                     {getPackageHook(pkg.level)}
                   </p>
+                  {requirementText ? (
+                    <p className="text-xs text-red-500 mt-2">
+                      {requirementText}
+                    </p>
+                  ) : null}
                 </div>
 
                 <div className="border-t border-b border-gold border-opacity-20 py-4 space-y-2">

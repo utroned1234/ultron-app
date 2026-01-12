@@ -29,6 +29,7 @@ export default function ConfigTab({ token }: ConfigTabProps) {
   const [bonusRules, setBonusRules] = useState<BonusRule[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<string | null>(null)
+  const [globalQr, setGlobalQr] = useState('')
   const { showToast } = useToast()
 
   useEffect(() => {
@@ -53,6 +54,7 @@ export default function ConfigTab({ token }: ConfigTabProps) {
         const pkgData = await pkgRes.json()
         console.log('Paquetes VIP cargados:', pkgData)
         setPackages(pkgData)
+        setGlobalQr(pkgData[0]?.qr_image_url || '')
       }
       if (bonusRes.ok) {
         const bonusData = await bonusRes.json()
@@ -83,6 +85,31 @@ export default function ConfigTab({ token }: ConfigTabProps) {
         fetchData()
       } else {
         showToast('Error al actualizar', 'error')
+      }
+    } catch (error) {
+      showToast('Error de conexión', 'error')
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  const updateGlobalQr = async () => {
+    setSaving('global-qr')
+    try {
+      const res = await fetch('/api/admin/vip-packages', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ qr_image_url: globalQr }),
+      })
+
+      if (res.ok) {
+        showToast('QR actualizado para todos los paquetes', 'success')
+        fetchData()
+      } else {
+        showToast('Error al actualizar el QR', 'error')
       }
     } catch (error) {
       showToast('Error de conexión', 'error')
@@ -265,6 +292,7 @@ export default function ConfigTab({ token }: ConfigTabProps) {
             <p>⚠️ Los cambios se aplican inmediatamente a nuevas compras</p>
           </div>
         </Card>
+
       </div>
 
       {/* Bonus Rules Table */}
@@ -338,6 +366,29 @@ export default function ConfigTab({ token }: ConfigTabProps) {
             <p className="pl-4">→ El nivel 3 recibe: 1000 × 1% = <span className="text-gold-bright font-bold">Bs 10</span></p>
             <p className="mt-3">⚠️ <strong className="text-gold">IMPORTANTE:</strong> Los cambios se aplican a TODAS las nuevas compras aprobadas.</p>
             <p>⚠️ Las compras anteriores mantienen el porcentaje con el que fueron calculadas.</p>
+          </div>
+        </Card>
+
+        <Card className="bg-dark-bg mt-4">
+          <div className="space-y-3">
+            <p className="text-sm text-text-secondary">
+              QR global para todos los paquetes (se actualiza automaticamente).
+            </p>
+            <input
+              type="text"
+              value={globalQr}
+              onChange={(e) => setGlobalQr(e.target.value)}
+              className="w-full px-3 py-2 bg-dark-bg border border-gold border-opacity-30 rounded text-text-primary focus:outline-none focus:border-gold transition-all"
+              placeholder="URL del QR"
+            />
+            <Button
+              variant="primary"
+              onClick={updateGlobalQr}
+              disabled={saving === 'global-qr'}
+              className="w-full"
+            >
+              {saving === 'global-qr' ? 'Guardando...' : 'Actualizar QR global'}
+            </Button>
           </div>
         </Card>
       </div>

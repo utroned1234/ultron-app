@@ -2,9 +2,19 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { hashPassword } from '@/lib/auth/hash'
 import { generateUserCode } from '@/lib/utils'
+import { getClientIp, rateLimit } from '@/lib/rateLimit'
 
 export async function POST(req: NextRequest) {
   try {
+    const ip = getClientIp(req)
+    const limitResult = rateLimit(`signup:${ip}`, 10, 60_000)
+    if (!limitResult.allowed) {
+      return NextResponse.json(
+        { error: 'Demasiados intentos. Intenta nuevamente en un minuto.' },
+        { status: 429 }
+      )
+    }
+
     const { sponsor_code, full_name, username, email, password } = await req.json()
 
     if (!full_name || !username || !email || !password) {

@@ -47,6 +47,9 @@ interface Withdrawal {
   amount_bs: number
   total_earnings_bs: number
   phone_number: string
+  bank_name?: string
+  account_number?: string
+  payout_method?: string
   qr_image_url: string
   created_at: string
 }
@@ -100,21 +103,32 @@ export default function AdminPage() {
   const [newsActive, setNewsActive] = useState(true)
   const { showToast } = useToast()
   const [loading, setLoading] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [processing, setProcessing] = useState(false)
   const [token, setToken] = useState<string>('')
   const [errorMessage, setErrorMessage] = useState('')
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null)
   const [purchaseSearch, setPurchaseSearch] = useState('')
+  const [activeSearch, setActiveSearch] = useState('')
   const [dailyProfitStatus, setDailyProfitStatus] = useState<{
     already_run: boolean
     last_run_at: string | null
   } | null>(null)
+  const pageSize = 30
+  const [purchasesOffset, setPurchasesOffset] = useState(0)
+  const [purchasesHasMore, setPurchasesHasMore] = useState(true)
+  const [withdrawalsOffset, setWithdrawalsOffset] = useState(0)
+  const [withdrawalsHasMore, setWithdrawalsHasMore] = useState(true)
+  const [activeOffset, setActiveOffset] = useState(0)
+  const [activeHasMore, setActiveHasMore] = useState(true)
 
   // Config states
   const [packages, setPackages] = useState<VipPackage[]>([])
   const [bonusRules, setBonusRules] = useState<BonusRule[]>([])
   const [configLoading, setConfigLoading] = useState(true)
   const [saving, setSaving] = useState<string | null>(null)
+  const [adminVerified, setAdminVerified] = useState(false)
+  const [adminChecking, setAdminChecking] = useState(true)
 
   useEffect(() => {
     // Get token only on client side
@@ -128,9 +142,33 @@ export default function AdminPage() {
   }, [])
 
   useEffect(() => {
-    if (token && (tab === 'purchases' || tab === 'withdrawals' || tab === 'active-users' || tab === 'news')) {
-      fetchData()
+    if (!token) return
+    if (tab === 'purchases') {
+      setPurchases([])
+      setPurchasesOffset(0)
+      setPurchasesHasMore(true)
+      fetchPurchases(0, false)
+    } else if (tab === 'withdrawals') {
+      setWithdrawals([])
+      setWithdrawalsOffset(0)
+      setWithdrawalsHasMore(true)
+      fetchWithdrawals(0, false)
+    } else if (tab === 'active-users') {
+      setActiveUsers([])
+      setActiveOffset(0)
+      setActiveHasMore(true)
+      fetchActiveUsers(0, false)
+    } else if (tab === 'news') {
+      fetchNews()
     }
+  }, [tab, token])
+
+  useEffect(() => {
+    if (!token || tab !== 'purchases') return
+    const interval = setInterval(() => {
+      fetchPurchases(0, false)
+    }, 15000)
+    return () => clearInterval(interval)
   }, [tab, token])
 
   useEffect(() => {
@@ -149,8 +187,20 @@ export default function AdminPage() {
     return token
   }
 
+  const handleAuthRedirect = (status: number) => {
+    if (status === 401) {
+      router.push('/login')
+      return
+    }
+    if (status === 403) {
+      showToast('Acceso solo para administradores', 'error')
+      router.push('/home')
+    }
+  }
+
   const fetchConfigData = async () => {
     setConfigLoading(true)
+    setAdminChecking(true)
     try {
       const [pkgRes, bonusRes] = await Promise.all([
         fetch('/api/admin/vip-packages', {
@@ -161,6 +211,18 @@ export default function AdminPage() {
         }),
       ])
 
+      if (pkgRes.status === 401 || pkgRes.status === 403) {
+        handleAuthRedirect(pkgRes.status)
+        return
+      }
+      if (bonusRes.status === 401 || bonusRes.status === 403) {
+        handleAuthRedirect(bonusRes.status)
+        return
+      }
+
+      if (pkgRes.ok || bonusRes.ok) {
+        setAdminVerified(true)
+      }
       if (pkgRes.ok) {
         const pkgData = await pkgRes.json()
         setPackages(pkgData)
@@ -173,6 +235,7 @@ export default function AdminPage() {
       console.error('Error fetching config:', error)
     } finally {
       setConfigLoading(false)
+      setAdminChecking(false)
     }
   }
 
@@ -238,7 +301,120 @@ export default function AdminPage() {
     ))
   }
 
-  const fetchData = async () => {
+  const fetchPurchases = async (offset = 0, append = false) => {
+    setLoading(!append)
+    setLoadingMore(append)
+    setErrorMessage('')
+    try {
+      const token = getToken()
+      if (!token) {
+        router.push('/login')
+        return
+      }
+      const res = await fetch(`/api/admin/purchases?limit=${pageSize}&offset=${offset}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.status === 401 || res.status === 403) {
+        handleAuthRedirect(res.status)
+        return
+      }
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        setErrorMessage(data?.error || 'Error al cargar compras')
+        setPurchases([])
+        setPurchasesTotal(0)
+      } else {
+        const data = await res.json()
+        const items = data.purchases || []
+        setPurchases((prev) => (append ? [...prev, ...items] : items))
+        setPurchasesTotal(data.total_investment_bs || 0)
+        setPurchasesHasMore(Boolean(data.has_more))
+        setPurchasesOffset(data.next_offset || 0)
+      }
+    } catch (error) {
+      console.error('Fetch error:', error)
+      setErrorMessage('Error de conexión')
+    } finally {
+      setLoading(false)
+      setLoadingMore(false)
+    }
+  }
+
+  const fetchWithdrawals = async (offset = 0, append = false) => {
+    setLoading(!append)
+    setLoadingMore(append)
+    setErrorMessage('')
+    try {
+      const token = getToken()
+      if (!token) {
+        router.push('/login')
+        return
+      }
+      const res = await fetch(`/api/admin/withdrawals?limit=${pageSize}&offset=${offset}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.status === 401 || res.status === 403) {
+        handleAuthRedirect(res.status)
+        return
+      }
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        setErrorMessage(data?.error || 'Error al cargar retiros')
+        setWithdrawals([])
+      } else {
+        const data = await res.json()
+        const items = data.withdrawals || []
+        setWithdrawals((prev) => (append ? [...prev, ...items] : items))
+        setWithdrawalsHasMore(Boolean(data.has_more))
+        setWithdrawalsOffset(data.next_offset || 0)
+      }
+    } catch (error) {
+      console.error('Fetch error:', error)
+      setErrorMessage('Error de conexión')
+    } finally {
+      setLoading(false)
+      setLoadingMore(false)
+    }
+  }
+
+  const fetchActiveUsers = async (offset = 0, append = false) => {
+    setLoading(!append)
+    setLoadingMore(append)
+    setErrorMessage('')
+    try {
+      const token = getToken()
+      if (!token) {
+        router.push('/login')
+        return
+      }
+      const res = await fetch(`/api/admin/active-users?limit=${pageSize}&offset=${offset}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.status === 401 || res.status === 403) {
+        handleAuthRedirect(res.status)
+        return
+      }
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        setErrorMessage(data?.error || 'Error al cargar usuarios activos')
+        setActiveUsers([])
+      } else {
+        const data = await res.json()
+        const items = data.users || []
+        setActiveUsers((prev) => (append ? [...prev, ...items] : items))
+        setActiveHasMore(Boolean(data.has_more))
+        setActiveOffset(data.next_offset || 0)
+      }
+    } catch (error) {
+      console.error('Fetch error:', error)
+      setErrorMessage('Error de conexión')
+    } finally {
+      setLoading(false)
+      setLoadingMore(false)
+    }
+  }
+
+  const fetchNews = async () => {
     setLoading(true)
     setErrorMessage('')
     try {
@@ -247,78 +423,20 @@ export default function AdminPage() {
         router.push('/login')
         return
       }
-
-      if (tab === 'purchases') {
-        const res = await fetch('/api/admin/purchases', {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        if (res.status === 401 || res.status === 403) {
-          router.push('/login')
-          return
-        }
-        if (!res.ok) {
-          const data = await res.json().catch(() => null)
-          setErrorMessage(data?.error || 'Error al cargar compras')
-          setPurchases([])
-          setPurchasesTotal(0)
-        } else {
-          const data = await res.json()
-          if (Array.isArray(data)) {
-            setPurchases(data)
-            setPurchasesTotal(0)
-          } else {
-            setPurchases(data.purchases || [])
-            setPurchasesTotal(data.total_investment_bs || 0)
-          }
-        }
-      } else if (tab === 'withdrawals') {
-        const res = await fetch('/api/admin/withdrawals', {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        if (res.status === 401 || res.status === 403) {
-          router.push('/login')
-          return
-        }
-        if (!res.ok) {
-          const data = await res.json().catch(() => null)
-          setErrorMessage(data?.error || 'Error al cargar retiros')
-          setWithdrawals([])
-        } else {
-          const data = await res.json()
-          setWithdrawals(data)
-        }
-      } else if (tab === 'active-users') {
-        const res = await fetch('/api/admin/active-users', {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        if (res.status === 401 || res.status === 403) {
-          router.push('/login')
-          return
-        }
-        if (!res.ok) {
-          const data = await res.json().catch(() => null)
-          setErrorMessage(data?.error || 'Error al cargar usuarios activos')
-          setActiveUsers([])
-        } else {
-          const data = await res.json()
-          setActiveUsers(data)
-        }
-      } else if (tab === 'news') {
-        const res = await fetch('/api/admin/news', {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        if (res.status === 401 || res.status === 403) {
-          router.push('/login')
-          return
-        }
-        if (!res.ok) {
-          const data = await res.json().catch(() => null)
-          setErrorMessage(data?.error || 'Error al cargar noticias')
-          setAnnouncements([])
-        } else {
-          const data = await res.json()
-          setAnnouncements(data)
-        }
+      const res = await fetch('/api/admin/news', {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (res.status === 401 || res.status === 403) {
+        handleAuthRedirect(res.status)
+        return
+      }
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        setErrorMessage(data?.error || 'Error al cargar noticias')
+        setAnnouncements([])
+      } else {
+        const data = await res.json()
+        setAnnouncements(data)
       }
     } catch (error) {
       console.error('Fetch error:', error)
@@ -358,7 +476,7 @@ export default function AdminPage() {
 
       if (res.ok) {
         showToast('Compra aprobada exitosamente', 'success')
-        fetchData()
+        fetchPurchases(0, false)
       } else {
         const data = await res.json()
         showToast(data.error || 'Error al aprobar', 'error')
@@ -383,9 +501,34 @@ export default function AdminPage() {
 
       if (res.ok) {
         showToast('Compra rechazada', 'info')
-        fetchData()
+        fetchPurchases(0, false)
       } else {
         showToast('Error al rechazar', 'error')
+      }
+    } catch (error) {
+      showToast('Error de conexión', 'error')
+    } finally {
+      setProcessing(false)
+    }
+  }
+
+  const handleDeletePurchase = async (id: string) => {
+    if (!confirm('¿Eliminar este pak del usuario?')) return
+
+    setProcessing(true)
+    try {
+      const token = getToken()
+      const res = await fetch(`/api/admin/purchases/${id}/delete`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+
+      if (res.ok) {
+        showToast('Pak eliminado', 'success')
+        fetchPurchases(0, false)
+      } else {
+        const data = await res.json().catch(() => null)
+        showToast(data?.error || 'Error al eliminar', 'error')
       }
     } catch (error) {
       showToast('Error de conexión', 'error')
@@ -407,7 +550,7 @@ export default function AdminPage() {
 
       if (res.ok) {
         showToast('Retiro marcado como pagado', 'success')
-        fetchData()
+        fetchWithdrawals(0, false)
       } else {
         showToast('Error al procesar', 'error')
       }
@@ -486,7 +629,7 @@ export default function AdminPage() {
         setNewsTitle('')
         setNewsBody('')
         setNewsActive(true)
-        fetchData()
+        fetchNews()
       } else {
         const data = await res.json().catch(() => null)
         setErrorMessage(data?.error || 'Error al crear noticia')
@@ -525,6 +668,28 @@ export default function AdminPage() {
         )
       })
     : activeUsersList
+
+  const filteredActiveUsers = activeSearch.trim()
+    ? activeUsers.filter((entry) => {
+        const query = activeSearch.trim().toLowerCase()
+        return (
+          entry.user.username.toLowerCase().includes(query) ||
+          entry.user.full_name.toLowerCase().includes(query)
+        )
+      })
+    : activeUsers
+
+  if (!token || adminChecking || !adminVerified) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6">
+        <Card glassEffect>
+          <p className="text-center text-text-secondary">
+            Verificando acceso de administrador...
+          </p>
+        </Card>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen p-6 pb-24">
@@ -668,6 +833,14 @@ export default function AdminPage() {
                                       Desactivar
                                     </Button>
                                   </div>
+                                  <Button
+                                    variant="outline"
+                                    className="w-full text-red-500 border-red-500 hover:bg-red-500 hover:bg-opacity-10"
+                                    onClick={() => handleDeletePurchase(item.id)}
+                                    disabled={processing}
+                                  >
+                                    Eliminar pak
+                                  </Button>
                                 </div>
                               ))}
                           </div>
@@ -675,6 +848,16 @@ export default function AdminPage() {
                       </div>
                     </Card>
                   ))
+                )}
+                {purchasesHasMore && (
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => fetchPurchases(purchasesOffset, true)}
+                    disabled={loadingMore}
+                  >
+                    {loadingMore ? 'Cargando...' : 'Cargar mas'}
+                  </Button>
                 )}
               </div>
             )}
@@ -699,12 +882,24 @@ export default function AdminPage() {
                             <p className="text-text-secondary">@{w.user.username}</p>
                           </div>
                           <div className="text-right">
-                            <p className="text-xs text-text-secondary uppercase tracking-wider">Monto solicitado</p>
-                            <p className="text-2xl font-bold text-gold">
+                            <p className="text-[10px] text-text-secondary uppercase tracking-wider">Monto solicitado</p>
+                            <p className="text-xl font-bold text-gold">
                               Bs {w.amount_bs.toFixed(2)}
                             </p>
-                            <p className="text-xs text-text-secondary uppercase tracking-wider mt-2">Teléfono</p>
-                            <p className="text-sm text-text-primary">{w.phone_number || 'No registrado'}</p>
+                            <div className="mt-2 text-[10px] text-text-secondary space-y-1">
+                              <div>
+                                <span className="uppercase tracking-wider">Telefono:</span> {w.phone_number || 'No registrado'}
+                              </div>
+                              <div>
+                                <span className="uppercase tracking-wider">Banco:</span> {w.bank_name || 'No registrado'}
+                              </div>
+                              <div>
+                                <span className="uppercase tracking-wider">Cuenta:</span> {w.account_number || 'No registrado'}
+                              </div>
+                              <div>
+                                <span className="uppercase tracking-wider">Modo:</span> {w.payout_method || 'No registrado'}
+                              </div>
+                            </div>
                           </div>
                         </div>
 
@@ -721,6 +916,16 @@ export default function AdminPage() {
                       </div>
                     </Card>
                   ))
+                )}
+                {withdrawalsHasMore && (
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => fetchWithdrawals(withdrawalsOffset, true)}
+                    disabled={loadingMore}
+                  >
+                    {loadingMore ? 'Cargando...' : 'Cargar mas'}
+                  </Button>
                 )}
               </div>
             )}
@@ -766,37 +971,55 @@ export default function AdminPage() {
 
             {tab === 'active-users' && (
               <div className="space-y-4">
-                {activeUsers.length === 0 ? (
+                <Card glassEffect>
+                  <div className="space-y-2">
+                    <Input
+                      label="Buscar usuario"
+                      type="text"
+                      value={activeSearch}
+                      onChange={(e) => setActiveSearch(e.target.value)}
+                      placeholder="Usuario o nombre"
+                    />
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => setActiveSearch((value) => value.trim())}
+                    >
+                      Buscar
+                    </Button>
+                  </div>
+                </Card>
+                {filteredActiveUsers.length === 0 ? (
                   <Card>
                     <p className="text-center text-text-secondary">
                       No hay usuarios activos
                     </p>
                   </Card>
                 ) : (
-                  activeUsers.map((entry) => (
-                    <Card key={entry.user.username} glassEffect>
-                      <div className="space-y-3">
+                  filteredActiveUsers.map((entry) => (
+                    <Card key={entry.user.username} glassEffect className="p-2">
+                      <div className="space-y-1 text-[9px]">
                         <div className="flex justify-between items-start">
                           <div>
-                            <h3 className="text-xl font-bold text-gold">
+                            <h3 className="text-xs font-bold text-gold">
                               {entry.user.full_name}
                             </h3>
                             <p className="text-text-secondary">@{entry.user.username}</p>
-                            <p className="text-sm text-text-secondary">{entry.user.email}</p>
+                            <p className="text-text-secondary">{entry.user.email}</p>
                           </div>
                           <div className="text-right">
-                            <p className="text-xs text-text-secondary uppercase tracking-wider">
+                            <p className="text-[9px] text-text-secondary uppercase tracking-wider">
                               Paquetes Activos
                             </p>
-                            <p className="text-sm text-gold">
+                            <p className="text-[9px] text-gold">
                               {entry.active_packages.map((pkg) => pkg.name).join(', ')}
                             </p>
                           </div>
                         </div>
-                        <div className="text-xs text-text-secondary">
+                        <div className="text-[9px] text-text-secondary">
                           {entry.active_packages.map((pkg) => `Nivel ${pkg.level}`).join(' · ')}
                         </div>
-                        <div className="border-t border-gold border-opacity-20 pt-3">
+                        <div className="border-t border-gold border-opacity-20 pt-1">
                           <div className="flex justify-between">
                             <span className="text-text-secondary">Ganancias totales:</span>
                             <span className="font-bold text-gold-bright">
@@ -807,6 +1030,16 @@ export default function AdminPage() {
                       </div>
                     </Card>
                   ))
+                )}
+                {activeHasMore && (
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => fetchActiveUsers(activeOffset, true)}
+                    disabled={loadingMore}
+                  >
+                    {loadingMore ? 'Cargando...' : 'Cargar mas'}
+                  </Button>
                 )}
               </div>
             )}
@@ -886,7 +1119,7 @@ export default function AdminPage() {
                               })
                               if (res.ok) {
                                 showToast('Noticia eliminada', 'success')
-                                fetchData()
+                                fetchNews()
                               } else {
                                 const data = await res.json().catch(() => null)
                                 showToast(data?.error || 'Error al eliminar noticia', 'error')

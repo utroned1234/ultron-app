@@ -112,7 +112,7 @@ export default function WithdrawalsPage() {
         throw new Error(data.error || 'Error al solicitar retiro')
       }
 
-      showToast('Solicitud de retiro enviada exitosamente', 'success')
+      showToast('Solicitud exitosa. Tu pago se abonara en 24 a 72 horas.', 'success')
       setAmount('')
       setBankName('')
       setAccountNumber('')
@@ -160,6 +160,10 @@ export default function WithdrawalsPage() {
           <p className="mt-2 text-text-secondary uppercase tracking-wider text-sm font-light">
             Solicita tu retiro
           </p>
+          <p className="mt-2 text-xs text-text-secondary">
+            Retiros desde Bs 30. Pagos de lunes a viernes. Se acreditan de 24 a 72 horas
+            despues de la solicitud.
+          </p>
         </div>
 
         <Card glassEffect>
@@ -170,6 +174,9 @@ export default function WithdrawalsPage() {
             <p className="text-4xl font-bold text-gold gold-glow">
               Bs {balance.toFixed(2)}
             </p>
+          </div>
+          <div className="rounded-lg border border-gold border-opacity-20 bg-dark-card px-4 py-3 text-xs text-text-secondary text-center">
+            Minimo Bs 30 por retiro. Procesamos pagos diarios de lunes a viernes.
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">

@@ -118,11 +118,12 @@ export default function HomePage() {
   const referralLink = data
     ? `${typeof window !== 'undefined' ? window.location.origin : ''}/signup?ref=${data.user.user_code}`
     : ''
+  const referralCopyText = referralLink
 
   const copyReferralLink = async () => {
     try {
       if (navigator?.clipboard?.writeText) {
-        await navigator.clipboard.writeText(referralLink)
+        await navigator.clipboard.writeText(referralCopyText)
         showToast('Link copiado', 'success')
         return
       }
@@ -131,7 +132,7 @@ export default function HomePage() {
     }
 
     const textarea = document.createElement('textarea')
-    textarea.value = referralLink
+    textarea.value = referralCopyText
     textarea.setAttribute('readonly', 'true')
     textarea.style.position = 'absolute'
     textarea.style.left = '-9999px'
@@ -341,6 +342,48 @@ export default function HomePage() {
           </Card>
         </div>
 
+        <Card>
+          <h3 className="text-sm text-gold uppercase tracking-wider font-light mb-2 text-center reveal-float">
+            Bono de esfuerzo
+          </h3>
+          <p className="text-xs text-text-secondary text-balance text-center reveal-float">
+            Recompensas especiales por crecimiento real de tu red. Estos bonos se pagan una sola vez
+            al cumplir cada meta, sin importar el VIP que tengas.
+          </p>
+          <div className="flex gap-3 text-sm text-text-secondary overflow-x-auto justify-center">
+            <div className="rounded-lg border border-gold border-opacity-20 bg-dark-card px-4 py-3 reveal-float transition-transform duration-300 hover:-translate-y-0.5 text-center animate-[revealFloat_6s_ease-in-out_infinite]">
+              <p className="text-xs uppercase tracking-wider text-gold-bright">Meta 1</p>
+              <p className="mt-1 font-semibold text-text-primary">30 activos</p>
+              <p className="text-xs text-text-secondary">Primer nivel</p>
+              <p className="mt-2 text-gold font-bold">Bs 300</p>
+              <p className="text-xs text-text-secondary">
+                Se paga al tener 30 activos directos.
+              </p>
+            </div>
+            <div className="rounded-lg border border-gold border-opacity-20 bg-dark-card px-4 py-3 reveal-float transition-transform duration-300 hover:-translate-y-0.5 text-center animate-[revealFloat_6s_ease-in-out_infinite]">
+              <p className="text-xs uppercase tracking-wider text-gold-bright">Meta 2</p>
+              <p className="mt-1 font-semibold text-text-primary">50 activos</p>
+              <p className="text-xs text-text-secondary">Primer y segundo nivel</p>
+              <p className="mt-2 text-gold font-bold">Bs 500</p>
+              <p className="text-xs text-text-secondary">
+                Cuenta activos directos y de tu segundo nivel.
+              </p>
+            </div>
+            <div className="rounded-lg border border-gold border-opacity-20 bg-dark-card px-4 py-3 reveal-float transition-transform duration-300 hover:-translate-y-0.5 text-center animate-[revealFloat_6s_ease-in-out_infinite]">
+              <p className="text-xs uppercase tracking-wider text-gold-bright">Meta 3</p>
+              <p className="mt-1 font-semibold text-text-primary">100 socios</p>
+              <p className="text-xs text-text-secondary">Primer, segundo y tercer nivel</p>
+              <p className="mt-2 text-gold font-bold">Bs 1000</p>
+              <p className="text-xs text-text-secondary">
+                Se paga al completar 100 activos en 3 niveles.
+              </p>
+            </div>
+          </div>
+          <p className="text-xs text-text-secondary mt-3 text-center">
+            Aplica sin importar el VIP adquirido y no se repite.
+          </p>
+        </Card>
+
         <div className="profile-stage reveal-stagger">
           <div className="profile-header">
             <h2 className="profile-title">Comunidad en movimiento</h2>
@@ -349,7 +392,7 @@ export default function HomePage() {
             </p>
           </div>
           <div className="profile-column">
-            {Array.from({ length: 1000 }, (_, index) => {
+            {Array.from({ length: 120 }, (_, index) => {
               const names = [
                 'Luna Vega',
                 'Mateo Ruiz',

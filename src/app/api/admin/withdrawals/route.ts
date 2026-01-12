@@ -9,6 +9,10 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    const url = new URL(req.url)
+    const limit = Math.min(parseInt(url.searchParams.get('limit') || '30', 10), 100)
+    const offset = Math.max(parseInt(url.searchParams.get('offset') || '0', 10), 0)
+
     const withdrawals = await prisma.withdrawal.findMany({
       where: { status: 'PENDING' },
       include: {
@@ -21,6 +25,12 @@ export async function GET(req: NextRequest) {
         },
       },
       orderBy: { created_at: 'desc' },
+      take: limit,
+      skip: offset,
+    })
+
+    const totalCount = await prisma.withdrawal.count({
+      where: { status: 'PENDING' },
     })
 
     const userIds = Array.from(new Set(withdrawals.map((w) => w.user_id)))
@@ -41,7 +51,12 @@ export async function GET(req: NextRequest) {
       total_earnings_bs: totalsMap.get(w.user_id) || 0,
     }))
 
-    return NextResponse.json(payload)
+    return NextResponse.json({
+      withdrawals: payload,
+      total_count: totalCount,
+      has_more: offset + withdrawals.length < totalCount,
+      next_offset: offset + withdrawals.length,
+    })
   } catch (error) {
     console.error('Admin withdrawals error:', error)
     return NextResponse.json(

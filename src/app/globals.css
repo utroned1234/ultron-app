@@ -57,6 +57,18 @@ body {
   }
 }
 
+@keyframes logoDepth {
+  0%,
+  100% {
+    opacity: 0.75;
+    transform: scale(0.94);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
 .profile-stage {
   background: radial-gradient(circle at 15% 20%, rgba(201, 162, 77, 0.18), transparent 60%),
     radial-gradient(circle at 85% 10%, rgba(0, 199, 255, 0.2), transparent 55%),

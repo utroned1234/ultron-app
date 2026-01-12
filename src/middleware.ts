@@ -12,6 +12,7 @@ export function middleware(request: NextRequest) {
 
   const isProtectedPage = request.nextUrl.pathname.startsWith('/home') ||
     request.nextUrl.pathname.startsWith('/paks') ||
+    request.nextUrl.pathname.startsWith('/tabla') ||
     request.nextUrl.pathname.startsWith('/withdrawals') ||
     request.nextUrl.pathname.startsWith('/my-purchases') ||
     request.nextUrl.pathname.startsWith('/admin')

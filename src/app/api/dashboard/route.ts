@@ -2,32 +2,34 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireAuth } from '@/lib/auth/middleware'
 
+const dashboardCache = new Map<string, { expiresAt: number; payload: any }>()
+const DASHBOARD_TTL_MS = 8_000
+
 async function getNetworkCount(userId: string): Promise<number> {
-  let count = 0
-  const queue = [userId]
-  const visited = new Set<string>()
+  const result = await prisma.$queryRaw<{ count: bigint }[]>`
+    with recursive network as (
+      select id from "User" where sponsor_id = ${userId}
+      union all
+      select u.id from "User" u
+      inner join network n on u.sponsor_id = n.id
+    )
+    select count(*)::bigint as count from network
+  `
 
-  while (queue.length > 0) {
-    const currentId = queue.shift()!
-    if (visited.has(currentId)) continue
-    visited.add(currentId)
-
-    const referrals = await prisma.user.findMany({
-      where: { sponsor_id: currentId },
-      select: { id: true },
-    })
-
-    count += referrals.length
-    referrals.forEach(ref => queue.push(ref.id))
-  }
-
-  return count
+  const value = result[0]?.count ?? BigInt(0)
+  return Number(value)
 }
 
 export async function GET(req: NextRequest) {
   const authResult = requireAuth(req)
   if ('error' in authResult) {
     return NextResponse.json({ error: authResult.error }, { status: authResult.status })
+  }
+
+  const cacheKey = authResult.user.userId
+  const cached = dashboardCache.get(cacheKey)
+  if (cached && cached.expiresAt > Date.now()) {
+    return NextResponse.json(cached.payload)
   }
 
   try {
@@ -249,7 +251,7 @@ export async function GET(req: NextRequest) {
       console.error('Dashboard banners error:', error)
     }
 
-    return NextResponse.json({
+    const payload = {
       user,
       daily_profit: activePurchases.reduce((sum, p) => sum + p.daily_profit_bs, 0),
       daily_profit_total: dailyProfitTotal,
@@ -267,7 +269,14 @@ export async function GET(req: NextRequest) {
       banners_top: bannersTop,
       banners_bottom: bannersBottom,
       announcements,
+    }
+
+    dashboardCache.set(cacheKey, {
+      expiresAt: Date.now() + DASHBOARD_TTL_MS,
+      payload,
     })
+
+    return NextResponse.json(payload)
   } catch (error) {
     console.error('Dashboard error:', error)
     return NextResponse.json(

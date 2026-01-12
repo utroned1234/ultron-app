@@ -32,7 +32,14 @@ export async function PUT(req: NextRequest) {
   }
 
   try {
-    const { id, investment_bs, daily_profit_bs, is_enabled } = await req.json()
+    const { id, investment_bs, daily_profit_bs, is_enabled, qr_image_url } = await req.json()
+
+    if (!id && qr_image_url !== undefined) {
+      await prisma.vipPackage.updateMany({
+        data: { qr_image_url },
+      })
+      return NextResponse.json({ message: 'QR actualizado para todos los paquetes' })
+    }
 
     if (!id) {
       return NextResponse.json({ error: 'ID requerido' }, { status: 400 })
@@ -44,6 +51,7 @@ export async function PUT(req: NextRequest) {
         investment_bs: investment_bs !== undefined ? parseFloat(investment_bs) : undefined,
         daily_profit_bs: daily_profit_bs !== undefined ? parseFloat(daily_profit_bs) : undefined,
         is_enabled: is_enabled !== undefined ? is_enabled : undefined,
+        qr_image_url: qr_image_url !== undefined ? qr_image_url : undefined,
       },
     })
 

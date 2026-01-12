@@ -9,25 +9,51 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const purchases = await prisma.purchase.findMany({
+    const url = new URL(req.url)
+    const limit = Math.min(parseInt(url.searchParams.get('limit') || '30', 10), 100)
+    const offset = Math.max(parseInt(url.searchParams.get('offset') || '0', 10), 0)
+
+    const distinctUsers = await prisma.purchase.findMany({
       where: { status: 'ACTIVE' },
-      include: {
-        user: {
-          select: {
-            username: true,
-            full_name: true,
-            email: true,
-          },
-        },
-        vip_package: {
-          select: {
-            name: true,
-            level: true,
-          },
-        },
-      },
+      select: { user_id: true },
+      distinct: ['user_id'],
       orderBy: { activated_at: 'desc' },
+      take: limit,
+      skip: offset,
     })
+
+    const userIds = distinctUsers.map((item) => item.user_id)
+    const countResult = await prisma.$queryRaw<{ count: bigint }[]>`
+      select count(distinct user_id)::bigint as count
+      from "Purchase"
+      where status = 'ACTIVE'
+    `
+    const totalCount = Number(countResult[0]?.count ?? BigInt(0))
+
+    const purchases = userIds.length
+      ? await prisma.purchase.findMany({
+          where: {
+            status: 'ACTIVE',
+            user_id: { in: userIds },
+          },
+          include: {
+            user: {
+              select: {
+                username: true,
+                full_name: true,
+                email: true,
+              },
+            },
+            vip_package: {
+              select: {
+                name: true,
+                level: true,
+              },
+            },
+          },
+          orderBy: { activated_at: 'desc' },
+        })
+      : []
 
     const byUser = new Map<string, { user: typeof purchases[number]['user']; packages: typeof purchases[number]['vip_package'][] }>()
     for (const purchase of purchases) {
@@ -42,7 +68,6 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const userIds = Array.from(byUser.keys())
     const totals = userIds.length
       ? await prisma.walletLedger.groupBy({
           by: ['user_id'],
@@ -64,7 +89,12 @@ export async function GET(req: NextRequest) {
       total_earnings_bs: totalsMap.get(userId) || 0,
     }))
 
-    return NextResponse.json(payload)
+    return NextResponse.json({
+      users: payload,
+      total_count: totalCount,
+      has_more: offset + userIds.length < totalCount,
+      next_offset: offset + userIds.length,
+    })
   } catch (error) {
     console.error('Active users error:', error)
     return NextResponse.json(
