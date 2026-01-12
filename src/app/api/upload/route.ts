@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/auth/middleware'
-import { supabase } from '@/lib/supabaseClient'
+import { getSupabaseClient } from '@/lib/supabaseClient'
+
+export const dynamic = 'force-dynamic'
 
 export async function POST(req: NextRequest) {
   const authResult = requireAuth(req)
@@ -22,6 +24,18 @@ export async function POST(req: NextRequest) {
 
     const arrayBuffer = await file.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
+
+    let supabase
+    try {
+      supabase = getSupabaseClient()
+    } catch (initError) {
+      console.error('Supabase init error:', initError)
+      const placeholderUrl = 'https://via.placeholder.com/400x300/2B2B2B/C9A24D?text=Comprobante+Subido'
+      return NextResponse.json({
+        url: placeholderUrl,
+        warning: 'Storage no configurado. Se usó un placeholder.',
+      })
+    }
 
     // Try to upload to Supabase Storage
     const { data, error } = await supabase.storage
