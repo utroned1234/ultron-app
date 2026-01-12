@@ -31,6 +31,7 @@ export async function GET(req: NextRequest) {
     })
 
     const totalInvestmentResult = await prisma.purchase.aggregate({
+      where: { status: 'ACTIVE' },
       _sum: { investment_bs: true },
     })
     const totalInvestment = totalInvestmentResult._sum.investment_bs || 0
