@@ -7,9 +7,9 @@ dotenv.config({ path: '.env' })
 const prisma = new PrismaClient()
 
 async function createAdmin() {
-  const username = 'admin'
-  const email = 'admin@vip.com'
-  const password = 'admin123'
+  const username = 'admin01'
+  const email = 'admin01@vip.com'
+  const password = '12345678'
   const full_name = 'Administrador'
 
   // Check if admin exists
