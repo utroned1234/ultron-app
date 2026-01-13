@@ -171,7 +171,8 @@ export default function WithdrawalsPage() {
 
         <Card glassEffect>
           <p className="text-xs font-semibold text-red-400 text-center mb-4">
-            Monto minimo de retiro 30 bs
+            Las solicitudes deben realizarse únicamente con montos exactos:
+30 Bs · 100 Bs · 200 Bs · 500 Bs · 1.000 Bs · 2.000 Bs · 5.000 Bs
           </p>
           <div className="text-center mb-6">
             <p className="text-sm text-text-secondary uppercase tracking-wider font-light mb-2">
