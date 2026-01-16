@@ -36,7 +36,10 @@ export async function GET(req: NextRequest) {
             status: 'ACTIVE',
             user_id: { in: userIds },
           },
-          include: {
+          select: {
+            user_id: true,
+            created_at: true,
+            activated_at: true,
             user: {
               select: {
                 username: true,
@@ -55,16 +58,27 @@ export async function GET(req: NextRequest) {
         })
       : []
 
-    const byUser = new Map<string, { user: typeof purchases[number]['user']; packages: typeof purchases[number]['vip_package'][] }>()
+    const byUser = new Map<string, {
+      user: typeof purchases[number]['user'];
+      packages: Array<typeof purchases[number]['vip_package'] & { created_at: Date | null; activated_at: Date | null }>
+    }>()
     for (const purchase of purchases) {
       const entry = byUser.get(purchase.user_id)
       if (!entry) {
         byUser.set(purchase.user_id, {
           user: purchase.user,
-          packages: [purchase.vip_package],
+          packages: [{
+            ...purchase.vip_package,
+            created_at: purchase.created_at,
+            activated_at: purchase.activated_at,
+          }],
         })
       } else {
-        entry.packages.push(purchase.vip_package)
+        entry.packages.push({
+          ...purchase.vip_package,
+          created_at: purchase.created_at,
+          activated_at: purchase.activated_at,
+        })
       }
     }
 

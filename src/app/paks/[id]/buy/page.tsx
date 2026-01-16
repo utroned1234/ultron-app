@@ -114,7 +114,7 @@ export default function BuyPackagePage() {
         throw new Error(data.error || 'Error al crear compra')
       }
 
-      showToast('Compra registrada y activada exitosamente.', 'success')
+      showToast('Compra registrada exitosamente. Pendiente de aprobación por el administrador.', 'success')
       router.push('/my-purchases')
     } catch (err: any) {
       setError(err.message || 'Error al procesar la compra')
@@ -178,6 +178,7 @@ export default function BuyPackagePage() {
                     src={pkg.qr_image_url}
                     alt="QR de pago"
                     fill
+                    sizes="256px"
                     className="object-contain"
                   />
                 </div>

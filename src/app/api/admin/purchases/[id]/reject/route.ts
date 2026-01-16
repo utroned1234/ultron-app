@@ -25,20 +25,17 @@ export async function POST(
       )
     }
 
-    if (purchase.status === 'REJECTED') {
-      return NextResponse.json({ message: 'Compra ya desactivada' })
-    }
-
     const shouldReverse = purchase.status === 'ACTIVE'
 
     await prisma.$transaction(async (tx) => {
+      // Si la compra estaba activa, revertir ganancias y bonos
       if (shouldReverse && purchase.total_earned_bs > 0) {
         await tx.walletLedger.create({
           data: {
             user_id: purchase.user_id,
             type: 'ADJUSTMENT',
             amount_bs: -purchase.total_earned_bs,
-            description: `Reverso de ganancias por desactivacion ${purchase.id}`,
+            description: `Reverso de ganancias por rechazo ${purchase.id}`,
           },
         })
       }
@@ -47,23 +44,18 @@ export async function POST(
         await reverseReferralBonuses(tx, purchase.user_id, purchase.investment_bs)
       }
 
-      await tx.purchase.update({
+      // Eliminar la compra completamente de la base de datos
+      await tx.purchase.delete({
         where: { id: params.id },
-        data: {
-          status: 'REJECTED',
-          activated_at: null,
-          last_profit_at: null,
-          total_earned_bs: 0,
-          receipt_url: '',
-        },
       })
     })
 
+    // Eliminar el comprobante de Supabase Storage
     if (purchase.receipt_url) {
       await deleteReceiptByUrl(purchase.receipt_url)
     }
 
-    return NextResponse.json({ message: 'Compra rechazada' })
+    return NextResponse.json({ message: 'Compra rechazada y eliminada - El usuario puede solicitar nuevamente cualquier paquete' })
   } catch (error) {
     console.error('Reject purchase error:', error)
     return NextResponse.json(

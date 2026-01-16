@@ -63,6 +63,8 @@ interface ActiveUser {
   active_packages: {
     name: string
     level: number
+    created_at: string | null
+    activated_at: string | null
   }[]
   total_earnings_bs: number
 }
@@ -113,6 +115,9 @@ export default function AdminPage() {
   const [dailyProfitStatus, setDailyProfitStatus] = useState<{
     already_run: boolean
     last_run_at: string | null
+    next_unlock?: string
+    processed?: number
+    synced?: number
   } | null>(null)
   const pageSize = 30
   const [purchasesOffset, setPurchasesOffset] = useState(0)
@@ -163,13 +168,7 @@ export default function AdminPage() {
     }
   }, [tab, token])
 
-  useEffect(() => {
-    if (!token || tab !== 'purchases') return
-    const interval = setInterval(() => {
-      fetchPurchases(0, false)
-    }, 15000)
-    return () => clearInterval(interval)
-  }, [tab, token])
+  // Auto-refresh removido - El panel se actualiza al aprobar/rechazar compras
 
   useEffect(() => {
     if (token && tab === 'daily-profit') {
@@ -456,6 +455,7 @@ export default function AdminPage() {
         setDailyProfitStatus({
           already_run: !!data.already_run,
           last_run_at: data.last_run_at || null,
+          next_unlock: data.next_unlock,
         })
       }
     } catch (error) {
@@ -489,7 +489,7 @@ export default function AdminPage() {
   }
 
   const handleRejectPurchase = async (id: string) => {
-    if (!confirm('¿Desactivar esta compra?')) return
+    if (!confirm('¿Rechazar esta compra? El usuario podrá volver a solicitar este paquete.')) return
 
     setProcessing(true)
     try {
@@ -500,35 +500,10 @@ export default function AdminPage() {
       })
 
       if (res.ok) {
-        showToast('Compra rechazada', 'info')
+        showToast('Compra rechazada - Usuario puede solicitar nuevamente', 'info')
         fetchPurchases(0, false)
       } else {
         showToast('Error al rechazar', 'error')
-      }
-    } catch (error) {
-      showToast('Error de conexión', 'error')
-    } finally {
-      setProcessing(false)
-    }
-  }
-
-  const handleDeletePurchase = async (id: string) => {
-    if (!confirm('¿Eliminar este pak del usuario?')) return
-
-    setProcessing(true)
-    try {
-      const token = getToken()
-      const res = await fetch(`/api/admin/purchases/${id}/delete`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      })
-
-      if (res.ok) {
-        showToast('Pak eliminado', 'success')
-        fetchPurchases(0, false)
-      } else {
-        const data = await res.json().catch(() => null)
-        showToast(data?.error || 'Error al eliminar', 'error')
       }
     } catch (error) {
       showToast('Error de conexión', 'error')
@@ -561,6 +536,30 @@ export default function AdminPage() {
     }
   }
 
+  const handleRejectWithdrawal = async (id: string) => {
+    if (!confirm('¿Rechazar este retiro? Los fondos serán devueltos al usuario.')) return
+
+    setProcessing(true)
+    try {
+      const token = getToken()
+      const res = await fetch(`/api/admin/withdrawals/${id}/reject`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+
+      if (res.ok) {
+        showToast('Retiro rechazado - Fondos devueltos al usuario', 'info')
+        fetchWithdrawals(0, false)
+      } else {
+        showToast('Error al rechazar', 'error')
+      }
+    } catch (error) {
+      showToast('Error de conexión', 'error')
+    } finally {
+      setProcessing(false)
+    }
+  }
+
   const adminTabs = [
     { key: 'purchases' as const, label: 'Billetera', icon: '👛' },
     { key: 'withdrawals' as const, label: 'Retiros', icon: '💰' },
@@ -585,13 +584,23 @@ export default function AdminPage() {
       if (res.ok) {
         const data = await res.json().catch(() => null)
         if (data?.already_run) {
-          showToast('Ganancias diarias ya actualizadas', 'info')
+          const nextUnlockDate = data.next_unlock ? new Date(data.next_unlock) : null
+          const unlockMsg = nextUnlockDate
+            ? ` Disponible a la 1:00 AM (Bolivia)`
+            : ''
+          showToast(`Ganancias ya actualizadas.${unlockMsg}`, 'info')
         } else {
-          showToast(`Ganancias procesadas: ${data?.processed ?? 0}`, 'success')
+          showToast(
+            `✅ Ganancias procesadas: ${data?.processed ?? 0} usuarios | Sincronizados: ${data?.synced ?? 0}`,
+            'success'
+          )
         }
         setDailyProfitStatus({
           already_run: !!data?.already_run,
           last_run_at: data?.last_run_at || null,
+          next_unlock: data?.next_unlock,
+          processed: data?.processed,
+          synced: data?.synced,
         })
       } else {
         showToast('Error al procesar ganancias', 'error')
@@ -797,6 +806,26 @@ export default function AdminPage() {
                                     </span>
                                   </div>
 
+                                  <div className="bg-dark-card bg-opacity-50 rounded p-2 space-y-1">
+                                    <div className="flex justify-between text-[10px]">
+                                      <span className="text-text-secondary uppercase tracking-wider">Correo:</span>
+                                      <span className="text-gold">{p.user.email}</span>
+                                    </div>
+                                    <div className="flex justify-between text-[10px]">
+                                      <span className="text-text-secondary uppercase tracking-wider">Fecha de solicitud:</span>
+                                      <span className="text-gold">
+                                        {new Date(item.created_at).toLocaleString('es-ES', {
+                                          day: '2-digit',
+                                          month: '2-digit',
+                                          year: 'numeric',
+                                          hour: '2-digit',
+                                          minute: '2-digit',
+                                          second: '2-digit'
+                                        })}
+                                      </span>
+                                    </div>
+                                  </div>
+
                                   {item.receipt_url ? (
                                     <div className="w-full h-56 bg-dark-card rounded-card overflow-hidden">
                                       <img
@@ -829,17 +858,9 @@ export default function AdminPage() {
                                       onClick={() => handleRejectPurchase(item.id)}
                                       disabled={processing}
                                     >
-                                      Desactivar
+                                      Rechazar
                                     </Button>
                                   </div>
-                                  <Button
-                                    variant="outline"
-                                    className="w-full text-red-500 border-red-500 hover:bg-red-500 hover:bg-opacity-10"
-                                    onClick={() => handleDeletePurchase(item.id)}
-                                    disabled={processing}
-                                  >
-                                    Eliminar pak
-                                  </Button>
                                 </div>
                               ))}
                           </div>
@@ -902,6 +923,26 @@ export default function AdminPage() {
                           </div>
                         </div>
 
+                        <div className="bg-dark-card bg-opacity-50 rounded p-2 space-y-1">
+                          <div className="flex justify-between text-[10px]">
+                            <span className="text-text-secondary uppercase tracking-wider">Correo:</span>
+                            <span className="text-gold">{w.user.email}</span>
+                          </div>
+                          <div className="flex justify-between text-[10px]">
+                            <span className="text-text-secondary uppercase tracking-wider">Fecha de solicitud:</span>
+                            <span className="text-gold">
+                              {new Date(w.created_at).toLocaleString('es-ES', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                second: '2-digit'
+                              })}
+                            </span>
+                          </div>
+                        </div>
+
                         <div className="flex gap-2">
                           <Button
                             variant="primary"
@@ -910,6 +951,14 @@ export default function AdminPage() {
                             disabled={processing}
                           >
                             Marcar Pagado
+                          </Button>
+                          <Button
+                            variant="outline"
+                            className="flex-1"
+                            onClick={() => handleRejectWithdrawal(w.id)}
+                            disabled={processing}
+                          >
+                            Rechazar
                           </Button>
                         </div>
                       </div>
@@ -941,16 +990,42 @@ export default function AdminPage() {
                     <p className="text-sm text-text-secondary">
                       Aplica las ganancias diarias a todos los usuarios con VIP activo. Usa el porcentaje actual de cada paquete.
                     </p>
+
                     {dailyProfitStatus?.already_run && (
-                      <p className="text-sm text-green-400">
-                        Ganancias diarias ya actualizadas hoy.
-                      </p>
+                      <div className="bg-green-500 bg-opacity-10 border border-green-500 border-opacity-30 rounded-lg p-4">
+                        <p className="text-sm text-green-400 font-bold mb-2">
+                          ✅ Ganancias diarias ya actualizadas
+                        </p>
+                        {dailyProfitStatus.next_unlock && (
+                          <p className="text-xs text-text-secondary">
+                            Próxima ejecución disponible: <span className="text-gold font-bold">1:00 AM (Bolivia)</span>
+                          </p>
+                        )}
+                      </div>
                     )}
+
                     {dailyProfitStatus?.last_run_at && (
-                      <p className="text-xs text-text-secondary">
-                        Última actualización: {new Date(dailyProfitStatus.last_run_at).toLocaleString('es-ES')}
-                      </p>
+                      <div className="text-xs text-text-secondary space-y-1">
+                        <p>
+                          📅 Última actualización: <span className="text-gold">{new Date(dailyProfitStatus.last_run_at).toLocaleString('es-ES', { timeZone: 'America/La_Paz' })}</span>
+                        </p>
+                        {(dailyProfitStatus.processed !== undefined || dailyProfitStatus.synced !== undefined) && (
+                          <div className="flex items-center justify-center gap-4 mt-2 text-sm">
+                            {dailyProfitStatus.processed !== undefined && (
+                              <span className="text-green-400">
+                                👥 Procesados: <strong>{dailyProfitStatus.processed}</strong>
+                              </span>
+                            )}
+                            {dailyProfitStatus.synced !== undefined && (
+                              <span className="text-blue-400">
+                                🔄 Sincronizados: <strong>{dailyProfitStatus.synced}</strong>
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     )}
+
                     <Button
                       variant="primary"
                       className="w-full"
@@ -960,9 +1035,21 @@ export default function AdminPage() {
                       {processing
                         ? 'Procesando...'
                         : dailyProfitStatus?.already_run
-                          ? 'Ganancias ya actualizadas'
-                          : 'Actualizar Ganancias'}
+                          ? '🔒 Bloqueado hasta 1:00 AM (Bolivia)'
+                          : '▶️ Actualizar Ganancias Diarias'}
                     </Button>
+                  </div>
+                </Card>
+
+                <Card className="bg-dark-bg">
+                  <div className="text-sm text-text-secondary space-y-2">
+                    <p className="text-gold font-bold mb-3">ℹ️ Información del Proceso</p>
+                    <p>• Solo se procesan usuarios con VIP activo</p>
+                    <p>• Cada usuario recibe la ganancia diaria según su paquete VIP</p>
+                    <p>• El proceso se ejecuta manualmente por el administrador</p>
+                    <p>• Una vez ejecutado, se bloquea hasta la 1:00 AM (hora Bolivia)</p>
+                    <p>• <strong className="text-gold">Procesados:</strong> Usuarios que recibieron ganancias diarias</p>
+                    <p>• <strong className="text-blue-400">Sincronizados:</strong> Compras cuya ganancia se actualizó al paquete VIP</p>
                   </div>
                 </Card>
               </div>
@@ -997,7 +1084,7 @@ export default function AdminPage() {
                 ) : (
                   filteredActiveUsers.map((entry) => (
                     <Card key={entry.user.username} glassEffect className="p-2">
-                      <div className="space-y-1 text-[9px]">
+                      <div className="space-y-2 text-[9px]">
                         <div className="flex justify-between items-start">
                           <div>
                             <h3 className="text-xs font-bold text-gold">
@@ -1006,18 +1093,44 @@ export default function AdminPage() {
                             <p className="text-text-secondary">@{entry.user.username}</p>
                             <p className="text-text-secondary">{entry.user.email}</p>
                           </div>
-                          <div className="text-right">
-                            <p className="text-[9px] text-text-secondary uppercase tracking-wider">
-                              Paquetes Activos
-                            </p>
-                            <p className="text-[9px] text-gold">
-                              {entry.active_packages.map((pkg) => pkg.name).join(', ')}
-                            </p>
-                          </div>
                         </div>
-                        <div className="text-[9px] text-text-secondary">
-                          {entry.active_packages.map((pkg) => `Nivel ${pkg.level}`).join(' · ')}
+
+                        {/* Paquetes VIP con fechas */}
+                        <div className="space-y-1">
+                          {entry.active_packages.map((pkg, idx) => (
+                            <div key={idx} className="bg-dark-card bg-opacity-50 rounded p-1.5 space-y-0.5">
+                              <div className="flex items-center gap-1">
+                                <span className="text-[10px] font-bold text-gold">{pkg.name}</span>
+                                <span className="text-[8px] text-text-secondary">· Nivel {pkg.level}</span>
+                              </div>
+                              <div className="text-[7px] text-text-secondary">
+                                <div>
+                                  Solicitado: {pkg.created_at
+                                    ? new Date(pkg.created_at).toLocaleString('es-ES', {
+                                        day: '2-digit',
+                                        month: '2-digit',
+                                        year: 'numeric',
+                                        hour: '2-digit',
+                                        minute: '2-digit'
+                                      })
+                                    : 'N/A'}
+                                </div>
+                                <div>
+                                  Activado: {pkg.activated_at
+                                    ? new Date(pkg.activated_at).toLocaleString('es-ES', {
+                                        day: '2-digit',
+                                        month: '2-digit',
+                                        year: 'numeric',
+                                        hour: '2-digit',
+                                        minute: '2-digit'
+                                      })
+                                    : 'N/A'}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
                         </div>
+
                         <div className="border-t border-gold border-opacity-20 pt-1">
                           <div className="flex justify-between">
                             <span className="text-text-secondary">Ganancias totales:</span>
@@ -1047,6 +1160,7 @@ export default function AdminPage() {
               <div className="space-y-4">
                 <Card glassEffect>
                   <div className="space-y-4">
+                    <h2 className="text-xl font-bold text-gold">📰 Crear Nueva Noticia</h2>
                     <Input
                       label="Título"
                       type="text"
@@ -1073,7 +1187,7 @@ export default function AdminPage() {
                         onChange={(e) => setNewsActive(e.target.checked)}
                         className="w-4 h-4 accent-gold"
                       />
-                      Mostrar en Home
+                      Mostrar en Home (usuarios verán esta noticia)
                     </label>
                     <Button
                       variant="primary"
@@ -1081,62 +1195,125 @@ export default function AdminPage() {
                       onClick={handleCreateNews}
                       disabled={processing}
                     >
-                      {processing ? 'Guardando...' : 'Publicar Noticia'}
+                      {processing ? 'Guardando...' : '✅ Publicar Noticia'}
                     </Button>
                   </div>
                 </Card>
 
-                {announcements.length === 0 ? (
-                  <Card>
-                    <p className="text-center text-text-secondary">
-                      No hay noticias
-                    </p>
-                  </Card>
-                ) : (
-                  announcements.map((item) => (
-                    <Card key={item.id} glassEffect>
-                      <div className="space-y-2">
-                        <p className="text-text-primary font-medium">{item.title}</p>
-                        <p className="text-sm text-text-secondary">{item.body}</p>
-                        <p className="text-xs text-text-secondary">
-                          {item.is_active ? 'Visible en Home' : 'Oculta'}
-                        </p>
-                        <Button
-                          variant="outline"
-                          className="w-full"
-                          onClick={async () => {
-                            setProcessing(true)
-                            try {
-                              const token = getToken()
-                              const res = await fetch('/api/admin/news', {
-                                method: 'DELETE',
-                                headers: {
-                                  'Content-Type': 'application/json',
-                                  Authorization: `Bearer ${token}`,
-                                },
-                                body: JSON.stringify({ id: item.id }),
-                              })
-                              if (res.ok) {
-                                showToast('Noticia eliminada', 'success')
-                                fetchNews()
-                              } else {
-                                const data = await res.json().catch(() => null)
-                                showToast(data?.error || 'Error al eliminar noticia', 'error')
-                              }
-                            } catch (error) {
-                              showToast('Error de conexión', 'error')
-                            } finally {
-                              setProcessing(false)
-                            }
-                          }}
-                          disabled={processing}
-                        >
-                          Eliminar noticia
-                        </Button>
-                      </div>
+                <div className="border-t border-gold border-opacity-20 pt-4">
+                  <h3 className="text-lg font-bold text-gold mb-3">📋 Noticias Publicadas</h3>
+                  {announcements.length === 0 ? (
+                    <Card>
+                      <p className="text-center text-text-secondary">
+                        No hay noticias publicadas
+                      </p>
                     </Card>
-                  ))
-                )}
+                  ) : (
+                    announcements.map((item) => (
+                      <Card key={item.id} glassEffect className="mb-3">
+                        <div className="space-y-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1">
+                              <h4 className="text-text-primary font-bold text-lg">{item.title}</h4>
+                              <p className="text-xs text-text-secondary mt-1">
+                                📅 {new Date(item.created_at).toLocaleString('es-ES', {
+                                  day: '2-digit',
+                                  month: '2-digit',
+                                  year: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })}
+                              </p>
+                            </div>
+                            <div className={`px-3 py-1 rounded-full text-xs font-bold ${
+                              item.is_active
+                                ? 'bg-green-500 bg-opacity-20 text-green-400 border border-green-500 border-opacity-30'
+                                : 'bg-red-500 bg-opacity-20 text-red-400 border border-red-500 border-opacity-30'
+                            }`}>
+                              {item.is_active ? '✓ Visible' : '✗ Oculta'}
+                            </div>
+                          </div>
+
+                          <p className="text-sm text-text-secondary whitespace-pre-wrap">{item.body}</p>
+
+                          <div className="flex gap-2">
+                            <Button
+                              variant={item.is_active ? 'outline' : 'primary'}
+                              className="flex-1"
+                              onClick={async () => {
+                                setProcessing(true)
+                                try {
+                                  const token = getToken()
+                                  const res = await fetch('/api/admin/news', {
+                                    method: 'PUT',
+                                    headers: {
+                                      'Content-Type': 'application/json',
+                                      Authorization: `Bearer ${token}`,
+                                    },
+                                    body: JSON.stringify({
+                                      id: item.id,
+                                      is_active: !item.is_active
+                                    }),
+                                  })
+                                  if (res.ok) {
+                                    showToast(
+                                      item.is_active ? 'Noticia ocultada' : 'Noticia visible',
+                                      'success'
+                                    )
+                                    fetchNews()
+                                  } else {
+                                    const data = await res.json().catch(() => null)
+                                    showToast(data?.error || 'Error al actualizar', 'error')
+                                  }
+                                } catch (error) {
+                                  showToast('Error de conexión', 'error')
+                                } finally {
+                                  setProcessing(false)
+                                }
+                              }}
+                              disabled={processing}
+                            >
+                              {item.is_active ? '👁️ Ocultar' : '👁️ Mostrar'}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              className="flex-1 text-red-400 border-red-500"
+                              onClick={async () => {
+                                if (!confirm('¿Eliminar esta noticia permanentemente?')) return
+                                setProcessing(true)
+                                try {
+                                  const token = getToken()
+                                  const res = await fetch('/api/admin/news', {
+                                    method: 'DELETE',
+                                    headers: {
+                                      'Content-Type': 'application/json',
+                                      Authorization: `Bearer ${token}`,
+                                    },
+                                    body: JSON.stringify({ id: item.id }),
+                                  })
+                                  if (res.ok) {
+                                    showToast('Noticia eliminada', 'success')
+                                    fetchNews()
+                                  } else {
+                                    const data = await res.json().catch(() => null)
+                                    showToast(data?.error || 'Error al eliminar', 'error')
+                                  }
+                                } catch (error) {
+                                  showToast('Error de conexión', 'error')
+                                } finally {
+                                  setProcessing(false)
+                                }
+                              }}
+                              disabled={processing}
+                            >
+                              🗑️ Eliminar
+                            </Button>
+                          </div>
+                        </div>
+                      </Card>
+                    ))
+                  )}
+                </div>
               </div>
             )}
           </>

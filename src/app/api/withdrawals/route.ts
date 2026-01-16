@@ -42,9 +42,11 @@ export async function POST(req: NextRequest) {
   try {
     const { amount_bs, bank_name, account_number, payout_method, phone_number } = await req.json()
 
-    if (!amount_bs || amount_bs <= 0) {
+    // Validar montos exactos permitidos
+    const allowedAmounts = [30, 100, 200, 500, 1000, 2000, 5000]
+    if (!amount_bs || !allowedAmounts.includes(amount_bs)) {
       return NextResponse.json(
-        { error: 'Monto inválido' },
+        { error: 'Solo se permiten retiros en montos exactos: 30, 100, 200, 500, 1000, 2000 o 5000 Bs' },
         { status: 400 }
       )
     }

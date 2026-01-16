@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireAuth } from '@/lib/auth/middleware'
-import { payReferralBonuses } from '@/lib/referrals'
 
 export async function POST(req: NextRequest) {
   const authResult = requireAuth(req)
@@ -19,17 +18,20 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Check if user already has this VIP package
-    const existingSamePackage = await prisma.purchase.findFirst({
+    // Check if user already has an ACTIVE or PENDING purchase of this VIP package
+    const existingPackage = await prisma.purchase.findFirst({
       where: {
         user_id: authResult.user.userId,
         vip_package_id,
+        status: {
+          in: ['ACTIVE', 'PENDING']
+        }
       },
     })
 
-    if (existingSamePackage) {
+    if (existingPackage) {
       return NextResponse.json(
-        { error: 'Ya compraste este paquete VIP' },
+        { error: 'Ya tienes una compra activa o pendiente de este paquete VIP' },
         { status: 400 }
       )
     }
@@ -45,7 +47,6 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const now = new Date()
     const purchase = await prisma.purchase.create({
       data: {
         user_id: authResult.user.userId,
@@ -53,15 +54,11 @@ export async function POST(req: NextRequest) {
         investment_bs: vipPackage.investment_bs,
         daily_profit_bs: vipPackage.daily_profit_bs,
         receipt_url,
-        status: 'ACTIVE',
-        activated_at: now,
-        last_profit_at: now,
+        status: 'PENDING',
       },
     })
 
-    await payReferralBonuses(purchase.user_id, purchase.investment_bs)
-
-    return NextResponse.json({ message: 'Compra registrada y activada', purchase })
+    return NextResponse.json({ message: 'Compra registrada - Pendiente de aprobación por el administrador', purchase })
   } catch (error) {
     console.error('Purchase error:', error)
     return NextResponse.json(

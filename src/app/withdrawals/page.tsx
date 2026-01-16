@@ -63,8 +63,10 @@ export default function WithdrawalsPage() {
     setError('')
 
     const amountNum = parseFloat(amount)
-    if (isNaN(amountNum) || amountNum <= 0) {
-      setError('Monto inválido')
+    const allowedAmounts = [30, 100, 200, 500, 1000, 2000, 5000]
+
+    if (isNaN(amountNum) || !allowedAmounts.includes(amountNum)) {
+      setError('Por favor selecciona un monto válido de los cuadritos arriba')
       return
     }
 
@@ -170,9 +172,34 @@ export default function WithdrawalsPage() {
         </div>
 
         <Card glassEffect>
-          <p className="text-xs font-semibold text-red-400 text-center mb-4">
-            Monto minimo de retiro 30 bs
-          </p>
+          <div className="mb-6">
+            <p className="text-xs font-semibold text-gold text-center mb-3">
+              Las solicitudes deben realizarse únicamente con montos exactos:
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 mb-4">
+              {[30, 100, 200, 500, 1000, 2000, 5000].map((amountOption) => (
+                <button
+                  key={amountOption}
+                  type="button"
+                  onClick={() => setAmount(amountOption.toString())}
+                  className={`bg-dark-card border rounded-lg p-3 text-center transition-all ${
+                    parseFloat(amount) === amountOption
+                      ? 'border-gold bg-gold bg-opacity-20 scale-105'
+                      : 'border-gold border-opacity-30 hover:border-gold hover:bg-gold hover:bg-opacity-5'
+                  }`}
+                >
+                  <p className="text-sm font-bold text-gold-bright">
+                    {amountOption >= 1000 ? `${(amountOption / 1000).toFixed(0)}.000` : amountOption} Bs
+                  </p>
+                </button>
+              ))}
+              <div className="col-span-2 sm:col-span-3 md:col-span-4 text-center">
+                <p className="text-[9px] text-text-secondary italic">
+                  ⚠️ Click en el monto deseado para seleccionarlo
+                </p>
+              </div>
+            </div>
+          </div>
           <div className="text-center mb-6">
             <p className="text-sm text-text-secondary uppercase tracking-wider font-light mb-2">
               Saldo disponible
@@ -185,12 +212,13 @@ export default function WithdrawalsPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <Input
               label="Monto a retirar"
-              type="number"
-              step="0.01"
+              type="text"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              placeholder="0.00"
+              placeholder="Selecciona un monto arriba"
               required
+              readOnly
+              className="cursor-not-allowed"
             />
 
             <div>

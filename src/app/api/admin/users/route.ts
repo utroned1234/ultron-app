@@ -22,33 +22,44 @@ export async function GET(req: NextRequest) {
       orderBy: { created_at: 'desc' },
     })
 
-    // Get balance for each user
-    const usersWithBalance = await Promise.all(
-      users.map(async (user) => {
-        const ledgerSum = await prisma.walletLedger.aggregate({
-          where: { user_id: user.id },
-          _sum: { amount_bs: true },
-        })
+    const userIds = users.map((u) => u.id)
 
-        const activePurchase = await prisma.purchase.findFirst({
-          where: {
-            user_id: user.id,
-            status: 'ACTIVE',
-          },
-          select: {
-            vip_package: {
-              select: { name: true },
-            },
-          },
-        })
+    // Get balances for all users in one query using groupBy
+    const balances = await prisma.walletLedger.groupBy({
+      by: ['user_id'],
+      where: { user_id: { in: userIds } },
+      _sum: { amount_bs: true },
+    })
 
-        return {
-          ...user,
-          balance: ledgerSum._sum.amount_bs || 0,
-          active_vip: activePurchase?.vip_package.name || null,
-        }
-      })
+    // Get active purchases for all users in one query
+    const activePurchases = await prisma.purchase.findMany({
+      where: {
+        user_id: { in: userIds },
+        status: 'ACTIVE',
+      },
+      select: {
+        user_id: true,
+        vip_package: {
+          select: { name: true },
+        },
+      },
+    })
+
+    // Create maps for quick lookup
+    const balanceMap = new Map(
+      balances.map((b) => [b.user_id, b._sum.amount_bs || 0])
     )
+
+    const activePurchaseMap = new Map(
+      activePurchases.map((p) => [p.user_id, p.vip_package.name])
+    )
+
+    // Combine data
+    const usersWithBalance = users.map((user) => ({
+      ...user,
+      balance: balanceMap.get(user.id) || 0,
+      active_vip: activePurchaseMap.get(user.id) || null,
+    }))
 
     return NextResponse.json(usersWithBalance)
   } catch (error) {

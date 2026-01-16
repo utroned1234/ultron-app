@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { requireAdmin } from '@/lib/auth/middleware'
-import { payReferralBonuses } from '@/lib/referrals'
+import { payReferralBonusesWithClient } from '@/lib/referrals'
 
 export async function POST(
   req: NextRequest,
@@ -30,16 +30,22 @@ export async function POST(
 
     const now = new Date()
 
-    await prisma.purchase.update({
-      where: { id: params.id },
-      data: {
-        status: 'ACTIVE',
-        activated_at: now,
-        last_profit_at: now,
-      },
-    })
+    // Ejecutar todo en una transacción para garantizar atomicidad
+    // Si los bonos fallan, la compra no se activa
+    await prisma.$transaction(async (tx) => {
+      // 1. Activar la compra
+      await tx.purchase.update({
+        where: { id: params.id },
+        data: {
+          status: 'ACTIVE',
+          activated_at: now,
+          last_profit_at: now,
+        },
+      })
 
-    await payReferralBonuses(purchase.user_id, purchase.investment_bs)
+      // 2. Pagar bonos a los patrocinadores (usando el cliente de transacción)
+      await payReferralBonusesWithClient(tx, purchase.user_id, purchase.investment_bs)
+    })
 
     return NextResponse.json({ message: 'Compra activada y bonos pagados' })
   } catch (error) {

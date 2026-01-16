@@ -37,8 +37,6 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    await prisma.announcement.deleteMany({})
-
     const item = await prisma.announcement.create({
       data: {
         title,
@@ -57,6 +55,38 @@ export async function POST(req: NextRequest) {
             ? 'Error al crear noticia'
             : (error as Error)?.message || 'Error al crear noticia',
       },
+      { status: 500 }
+    )
+  }
+}
+
+export async function PUT(req: NextRequest) {
+  const authResult = requireAdmin(req)
+  if ('error' in authResult) {
+    return NextResponse.json({ error: authResult.error }, { status: authResult.status })
+  }
+
+  try {
+    const { id, title, body, is_active } = await req.json()
+    if (!id) {
+      return NextResponse.json({ error: 'ID requerido' }, { status: 400 })
+    }
+
+    const updateData: any = {}
+    if (title !== undefined) updateData.title = title
+    if (body !== undefined) updateData.body = body
+    if (is_active !== undefined) updateData.is_active = is_active
+
+    const item = await prisma.announcement.update({
+      where: { id },
+      data: updateData,
+    })
+
+    return NextResponse.json(item)
+  } catch (error) {
+    console.error('Admin news update error:', error)
+    return NextResponse.json(
+      { error: 'Error al actualizar noticia' },
       { status: 500 }
     )
   }
