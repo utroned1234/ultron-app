@@ -271,12 +271,12 @@ export default function NetworkPage() {
 
             {/* Red visual */}
             <div
-              className="flex justify-center overflow-hidden px-4 py-8 bg-dark-card rounded-btn border border-gold border-opacity-10 cursor-grab active:cursor-grabbing"
+              className="flex justify-center overflow-auto px-4 py-8 bg-dark-card rounded-btn border border-gold border-opacity-10 cursor-grab active:cursor-grabbing"
               onMouseDown={handleMouseDown}
               onMouseMove={handleMouseMove}
               onMouseUp={handleMouseUp}
               onMouseLeave={handleMouseUp}
-              style={{ height: '500px' }}
+              style={{ minHeight: '500px', maxHeight: '70vh' }}
             >
               <div
                 className="inline-block transition-transform duration-200"
