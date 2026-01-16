@@ -94,6 +94,24 @@ export default function NetworkPage() {
     setIsDragging(false)
   }
 
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length !== 1) return
+    setIsDragging(true)
+    const touch = e.touches[0]
+    setDragStart({ x: touch.clientX - panX, y: touch.clientY - panY })
+  }
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isDragging || e.touches.length !== 1) return
+    const touch = e.touches[0]
+    setPanX(touch.clientX - dragStart.x)
+    setPanY(touch.clientY - dragStart.y)
+  }
+
+  const handleTouchEnd = () => {
+    setIsDragging(false)
+  }
+
   const resetView = () => {
     setZoom(100)
     setPanX(0)
@@ -271,18 +289,22 @@ export default function NetworkPage() {
 
             {/* Red visual */}
             <div
-              className="flex justify-center overflow-auto px-4 py-8 bg-dark-card rounded-btn border border-gold border-opacity-10 cursor-grab active:cursor-grabbing"
+              className="w-full flex justify-center overflow-auto bg-dark-card rounded-btn border border-gold border-opacity-10 cursor-grab active:cursor-grabbing"
               onMouseDown={handleMouseDown}
               onMouseMove={handleMouseMove}
               onMouseUp={handleMouseUp}
               onMouseLeave={handleMouseUp}
-              style={{ minHeight: '500px', maxHeight: '70vh' }}
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+              style={{ minHeight: '600px', maxHeight: '75vh', touchAction: 'none' }}
             >
               <div
-                className="inline-block transition-transform duration-200"
+                className="inline-block transition-transform duration-200 px-8 py-8 flex justify-center"
                 style={{
                   transform: `scale(${zoom / 100}) translate(${panX}px, ${panY}px)`,
                   transformOrigin: 'center top',
+                  minWidth: '100%',
                 }}
               >
                 {network ? (
