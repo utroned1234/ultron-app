@@ -11,75 +11,6 @@ interface UserNetworkNode {
   referrals: UserNetworkNode[]
 }
 
-async function getUserDownline(
-  userId: string
-): Promise<UserNetworkNode | null> {
-  // Get the user and their data
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: {
-      id: true,
-      username: true,
-      full_name: true,
-    },
-  })
-
-  if (!user) return null
-
-  // Get user's purchases to determine status and VIP packages
-  const purchases = await prisma.purchase.findMany({
-    where: { user_id: userId },
-    select: {
-      id: true,
-      status: true,
-      vip_package: {
-        select: { name: true },
-      },
-    },
-  })
-
-  // Determine user status
-  const hasActivePurchases = purchases.some((p) => p.status === 'ACTIVE')
-  const hasPendingPurchases = purchases.some((p) => p.status === 'PENDING')
-  let status: 'ACTIVO' | 'INACTIVO' | 'PENDIENTE'
-
-  if (hasPendingPurchases) {
-    status = 'PENDIENTE'
-  } else if (hasActivePurchases) {
-    status = 'ACTIVO'
-  } else {
-    status = 'INACTIVO'
-  }
-
-  // Get VIP packages
-  const vipPackages = purchases
-    .map((p) => p.vip_package.name)
-    .filter((name, index, self) => self.indexOf(name) === index) // Remove duplicates
-
-  // Get all direct referrals recursively
-  const referrals = await prisma.user.findMany({
-    where: { sponsor_id: userId },
-    select: { id: true },
-  })
-
-  const referralsNodes: UserNetworkNode[] = []
-  for (const referral of referrals) {
-    const node = await getUserDownline(referral.id)
-    if (node) {
-      referralsNodes.push(node)
-    }
-  }
-
-  return {
-    id: user.id,
-    username: user.username,
-    full_name: user.full_name,
-    status,
-    vip_packages: vipPackages,
-    referrals: referralsNodes,
-  }
-}
-
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -90,15 +21,145 @@ export async function GET(
   }
 
   try {
-    const { id } = await params
+    const { id: userId } = await params
 
-    const userNetwork = await getUserDownline(id)
+    // Verificar que el usuario existe
+    const rootUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, username: true, full_name: true },
+    })
 
-    if (!userNetwork) {
+    if (!rootUser) {
       return NextResponse.json(
         { error: 'Usuario no encontrado' },
         { status: 404 }
       )
+    }
+
+    // Obtener TODOS los usuarios de una sola vez (optimización)
+    const allUsers = await prisma.user.findMany({
+      select: {
+        id: true,
+        username: true,
+        full_name: true,
+        sponsor_id: true,
+      },
+    })
+
+    // Obtener TODAS las compras de una sola vez (optimización)
+    const allPurchases = await prisma.purchase.findMany({
+      select: {
+        user_id: true,
+        status: true,
+        vip_package: {
+          select: {
+            name: true,
+          },
+        },
+      },
+    })
+
+    // Crear mapa de compras por usuario
+    const purchasesByUser = new Map<string, typeof allPurchases>()
+    for (const purchase of allPurchases) {
+      if (!purchasesByUser.has(purchase.user_id)) {
+        purchasesByUser.set(purchase.user_id, [])
+      }
+      purchasesByUser.get(purchase.user_id)!.push(purchase)
+    }
+
+    // Crear mapa de usuarios por ID
+    const usersById = new Map<string, typeof allUsers[0]>()
+    for (const user of allUsers) {
+      usersById.set(user.id, user)
+    }
+
+    // Función para determinar si un usuario está en la red del usuario raíz (downline)
+    function isInNetwork(targetUserId: string, rootUserId: string): boolean {
+      let currentId: string | null = targetUserId
+      const visited = new Set<string>()
+
+      while (currentId && !visited.has(currentId)) {
+        if (currentId === rootUserId) return true
+        visited.add(currentId)
+        const user = usersById.get(currentId)
+        currentId = user?.sponsor_id || null
+      }
+      return false
+    }
+
+    // Filtrar solo usuarios que pertenecen a la red del usuario raíz (hacia abajo)
+    const networkUsers = allUsers.filter(u =>
+      u.sponsor_id && isInNetwork(u.id, userId) && u.id !== userId
+    )
+
+    // Función para construir el árbol en memoria (sin queries adicionales)
+    function buildTree(parentId: string): UserNetworkNode[] {
+      const children = networkUsers.filter(u => u.sponsor_id === parentId)
+
+      return children.map(user => {
+        const userPurchases = purchasesByUser.get(user.id) || []
+
+        // Determinar estado (prioridad a PENDIENTE)
+        const hasActive = userPurchases.some(p => p.status === 'ACTIVE')
+        const hasPending = userPurchases.some(p => p.status === 'PENDING')
+
+        let status: 'ACTIVO' | 'INACTIVO' | 'PENDIENTE'
+        if (hasPending) {
+          // Si hay solicitudes pendientes, el estado es PENDIENTE sin importar si tiene activos
+          status = 'PENDIENTE'
+        } else if (hasActive) {
+          status = 'ACTIVO'
+        } else {
+          status = 'INACTIVO'
+        }
+
+        // Obtener nombres de paquetes VIP únicos (solo activos y pendientes)
+        const vipPackages = [...new Set(
+          userPurchases
+            .filter(p => p.status === 'ACTIVE' || p.status === 'PENDING')
+            .map(p => p.vip_package.name)
+        )]
+
+        return {
+          id: user.id,
+          username: user.username,
+          full_name: user.full_name,
+          status,
+          vip_packages: vipPackages,
+          referrals: buildTree(user.id),
+        }
+      })
+    }
+
+    // Construir árbol del usuario raíz
+    const rootUserPurchases = purchasesByUser.get(userId) || []
+    const rootHasActive = rootUserPurchases.some(p => p.status === 'ACTIVE')
+    const rootHasPending = rootUserPurchases.some(p => p.status === 'PENDING')
+
+    let rootStatus: 'ACTIVO' | 'INACTIVO' | 'PENDIENTE'
+    if (rootHasPending) {
+      // Si hay solicitudes pendientes, el estado es PENDIENTE sin importar si tiene activos
+      rootStatus = 'PENDIENTE'
+    } else if (rootHasActive) {
+      rootStatus = 'ACTIVO'
+    } else {
+      rootStatus = 'INACTIVO'
+    }
+
+    const rootVipPackages = [...new Set(
+      rootUserPurchases
+        .filter(p => p.status === 'ACTIVE' || p.status === 'PENDING')
+        .map(p => p.vip_package.name)
+    )]
+
+    const userNetwork: UserNetworkNode = {
+      id: rootUser.id,
+      username: rootUser.username,
+      full_name: rootUser.full_name,
+      status: rootStatus,
+      vip_packages: rootVipPackages,
+      referrals: buildTree(userId),
     }
 
     return NextResponse.json(userNetwork)

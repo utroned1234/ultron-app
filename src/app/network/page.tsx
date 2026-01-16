@@ -10,7 +10,7 @@ interface ReferralUser {
   username: string
   full_name: string
   status: 'ACTIVO' | 'INACTIVO' | 'PENDIENTE'
-  vip_packages: { name: string; level: number; status: string; activated_at?: string }[]
+  vip_packages: { name: string; level: number; status: string }[]
   referrals: ReferralUser[]
 }
 
@@ -361,9 +361,6 @@ export default function NetworkPage() {
                           <div key={idx} className="bg-green-500/10 border border-green-500/30 rounded-btn p-2">
                             <p className="text-sm font-semibold text-green-400">{pkg.name}</p>
                             <p className="text-xs text-green-300">Nivel {pkg.level}</p>
-                            {pkg.activated_at && (
-                              <p className="text-xs text-green-200/70 mt-1">Activado: {formatDate(pkg.activated_at)}</p>
-                            )}
                           </div>
                         ))}
                       </div>

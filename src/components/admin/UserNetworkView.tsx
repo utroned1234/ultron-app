@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import Card from '@/components/ui/Card'
+import UserDetailModal from './UserDetailModal'
 
 interface UserNetworkNode {
   id: string
@@ -12,112 +12,165 @@ interface UserNetworkNode {
   referrals: UserNetworkNode[]
 }
 
-interface NetworkTreeProps {
+interface UserNetworkViewProps {
   user: UserNetworkNode
-  level?: number
+  token: string
 }
 
 const getStatusColor = (status: string) => {
-  switch (status) {
-    case 'ACTIVO':
-      return 'border-l-4 border-green-500 bg-green-500/10'
-    case 'INACTIVO':
-      return 'border-l-4 border-red-500 bg-red-500/10'
-    case 'PENDIENTE':
-      return 'border-l-4 border-yellow-500 bg-yellow-500/10'
-    default:
-      return 'border-l-4 border-gray-500'
+  if (status === 'ACTIVO') return 'bg-green-500'
+  if (status === 'PENDIENTE') return 'bg-yellow-500'
+  if (status === 'INACTIVO') return 'bg-red-500'
+  return 'bg-gray-500'
+}
+
+// Función para aplanar la red en niveles
+function flattenNetwork(user: UserNetworkNode): { level: number; users: UserNetworkNode[] }[] {
+  const levels: { level: number; users: UserNetworkNode[] }[] = []
+
+  function traverse(nodes: UserNetworkNode[], currentLevel: number) {
+    if (nodes.length === 0) return
+
+    // Agregar usuarios del nivel actual
+    if (!levels[currentLevel]) {
+      levels[currentLevel] = { level: currentLevel, users: [] }
+    }
+    levels[currentLevel].users.push(...nodes)
+
+    // Recursivamente procesar hijos
+    const allChildren = nodes.flatMap(node => node.referrals)
+    if (allChildren.length > 0) {
+      traverse(allChildren, currentLevel + 1)
+    }
   }
-}
 
-const getStatusTextColor = (status: string) => {
-  switch (status) {
-    case 'ACTIVO':
-      return 'text-green-500'
-    case 'INACTIVO':
-      return 'text-red-500'
-    case 'PENDIENTE':
-      return 'text-yellow-500'
-    default:
-      return 'text-gray-500'
-  }
-}
+  // Nivel 0 es el usuario raíz
+  levels[0] = { level: 0, users: [user] }
+  traverse(user.referrals, 1)
 
-function NetworkNode({ user, level = 0 }: NetworkTreeProps) {
-  const [expanded, setExpanded] = useState(true)
-
-  return (
-    <div className="space-y-2">
-      <div
-        className={`p-4 rounded-lg ${getStatusColor(user.status)} transition-all`}
-        style={{ marginLeft: `${level * 20}px` }}
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex-1">
-            <h4 className="font-semibold text-text-primary">{user.full_name}</h4>
-            <p className="text-sm text-text-secondary">@{user.username}</p>
-            <p className={`text-sm font-semibold mt-1 ${getStatusTextColor(user.status)}`}>
-              {user.status}
-            </p>
-            {user.vip_packages.length > 0 && (
-              <div className="mt-2">
-                <p className="text-xs text-text-secondary">Paquetes VIP:</p>
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {user.vip_packages.map((pkg) => (
-                    <span
-                      key={pkg}
-                      className="px-2 py-1 bg-gold/20 text-gold text-xs rounded"
-                    >
-                      {pkg}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-          {user.referrals.length > 0 && (
-            <button
-              onClick={() => setExpanded(!expanded)}
-              className="px-3 py-1 text-xs bg-gold/20 text-gold rounded hover:bg-gold/30 transition-colors"
-            >
-              {expanded ? '▼' : '▶'} ({user.referrals.length})
-            </button>
-          )}
-        </div>
-      </div>
-
-      {expanded && user.referrals.length > 0 && (
-        <div className="space-y-2 border-l-2 border-text-secondary/30 ml-4 pl-0">
-          {user.referrals.map((referral) => (
-            <NetworkNode key={referral.id} user={referral} level={level + 1} />
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-interface UserNetworkViewProps {
-  user: UserNetworkNode
-}
-
-export function UserNetworkView({ user }: UserNetworkViewProps) {
-  return (
-    <div className="space-y-4">
-      <div>
-        <h3 className="text-lg font-bold text-gold mb-2">Red de {user.full_name}</h3>
-        <p className="text-sm text-text-secondary mb-4">
-          Total de referidos: {countTotalReferrals(user)}
-        </p>
-      </div>
-      <NetworkNode user={user} level={0} />
-    </div>
-  )
+  return levels
 }
 
 function countTotalReferrals(user: UserNetworkNode): number {
   return user.referrals.reduce(
     (total, referral) => total + 1 + countTotalReferrals(referral),
     0
+  )
+}
+
+export function UserNetworkView({ user, token }: UserNetworkViewProps) {
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
+
+  const handleNodeClick = (userId: string) => {
+    setSelectedUserId(userId)
+  }
+
+  const handleCloseModal = () => {
+    setSelectedUserId(null)
+  }
+
+  // Aplanar la red en niveles
+  const levels = flattenNetwork(user)
+
+  return (
+    <div className="space-y-8 py-6">
+      {/* Header */}
+      <div className="text-center space-y-4">
+        <h3 className="text-3xl font-bold text-gold gold-glow">Red de {user.full_name}</h3>
+        <p className="text-text-secondary">
+          Total de referidos: <span className="text-gold font-bold">{countTotalReferrals(user)}</span>
+        </p>
+
+        {/* Leyenda de colores */}
+        <div className="flex gap-6 justify-center text-sm">
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded-full bg-green-500"></div>
+            <span className="text-text-secondary">Activo</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded-full bg-yellow-500"></div>
+            <span className="text-text-secondary">Pendiente</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded-full bg-red-500"></div>
+            <span className="text-text-secondary">Inactivo</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Red por niveles */}
+      <div className="space-y-10">
+        {levels.map((levelData, index) => (
+          <div key={levelData.level} className="space-y-6">
+            {/* Flecha separadora entre niveles */}
+            {index > 0 && (
+              <div className="flex justify-center">
+                <div className="flex flex-col items-center gap-1">
+                  <div className="w-1 h-12 bg-gradient-to-b from-gold to-transparent"></div>
+                  <div className="text-2xl text-gold animate-bounce">↓</div>
+                </div>
+              </div>
+            )}
+
+            {/* Título del nivel */}
+            <div className="text-center space-y-2">
+              <h4 className="text-xl font-bold text-gold">
+                {levelData.level === 0 ? '👤 Usuario Raíz' : `📍 Nivel ${levelData.level}`}
+              </h4>
+              <p className="text-sm text-text-secondary">
+                {levelData.users.length} {levelData.users.length === 1 ? 'usuario' : 'usuarios'}
+              </p>
+            </div>
+
+            {/* Contenedor de usuarios del nivel */}
+            <div className="bg-gradient-to-br from-dark-card to-transparent border-2 border-gold border-opacity-20 rounded-2xl p-8 shadow-2xl">
+              <div className="flex flex-wrap justify-center items-start gap-12">
+                {levelData.users.map((u) => (
+                  <button
+                    key={u.id}
+                    onClick={() => handleNodeClick(u.id)}
+                    className="flex flex-col items-center group cursor-pointer"
+                  >
+                    {/* Icono circular con estado */}
+                    <div className="relative">
+                      <div
+                        className={`w-20 h-20 rounded-full ${getStatusColor(u.status)} flex items-center justify-center text-white text-3xl font-bold shadow-xl border-4 border-dark-bg transition-all group-hover:scale-110 group-hover:shadow-2xl`}
+                      >
+                        👤
+                      </div>
+                      {/* Indicador de VIP packages */}
+                      {u.vip_packages.length > 0 && (
+                        <div className="absolute -top-1 -right-1 w-6 h-6 bg-gold rounded-full flex items-center justify-center text-xs font-bold text-black border-2 border-dark-bg">
+                          {u.vip_packages.length}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Username */}
+                    <span className="mt-3 text-sm font-bold text-text-primary group-hover:text-gold transition-colors text-center max-w-[100px] truncate">
+                      @{u.username}
+                    </span>
+
+                    {/* Nombre completo */}
+                    <span className="text-xs text-text-secondary text-center max-w-[120px] truncate">
+                      {u.full_name}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Modal de detalle */}
+      {selectedUserId && (
+        <UserDetailModal
+          userId={selectedUserId}
+          token={token}
+          onClose={handleCloseModal}
+        />
+      )}
+    </div>
   )
 }

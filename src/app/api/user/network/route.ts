@@ -7,7 +7,7 @@ interface UserNetworkNode {
   username: string
   full_name: string
   status: 'ACTIVO' | 'INACTIVO' | 'PENDIENTE'
-  vip_packages: { name: string; level: number; status: string; activated_at?: string }[]
+  vip_packages: { name: string; level: number; status: string }[]
   referrals: UserNetworkNode[]
 }
 
@@ -38,7 +38,6 @@ export async function GET(req: NextRequest) {
         purchases: {
           select: {
             status: true,
-            activated_at: true,
             vip_package: {
               select: { name: true, level: true },
             },
@@ -126,8 +125,8 @@ export async function GET(req: NextRequest) {
       }
 
       const allVips = [
-        ...uActiveVips.map((p: any) => ({ ...p.vip_package, status: 'ACTIVE', activated_at: p.activated_at })),
-        ...uPendingVips.map((p: any) => ({ ...p.vip_package, status: 'PENDING', activated_at: p.activated_at }))
+        ...uActiveVips.map((p: any) => ({ ...p.vip_package, status: 'ACTIVE' })),
+        ...uPendingVips.map((p: any) => ({ ...p.vip_package, status: 'PENDING' }))
       ]
 
       return {
@@ -146,8 +145,8 @@ export async function GET(req: NextRequest) {
       full_name: user.full_name,
       status,
       vip_packages: [
-        ...activeVips.map(p => ({ ...p.vip_package, status: 'ACTIVE', activated_at: p.activated_at })),
-        ...pendingVips.map(p => ({ ...p.vip_package, status: 'PENDING', activated_at: p.activated_at }))
+        ...activeVips.map(p => ({ ...p.vip_package, status: 'ACTIVE' })),
+        ...pendingVips.map(p => ({ ...p.vip_package, status: 'PENDING' }))
       ],
       referrals: user.referrals.map(buildNode),
     })

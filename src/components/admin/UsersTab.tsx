@@ -92,7 +92,7 @@ export default function UsersTab({ token }: UsersTabProps) {
           {networkLoading ? (
             <p className="text-center text-gold">Cargando red del usuario...</p>
           ) : (
-            <UserNetworkView user={selectedUserNetwork} />
+            <UserNetworkView user={selectedUserNetwork} token={token} />
           )}
         </Card>
       </div>
