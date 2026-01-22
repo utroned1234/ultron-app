@@ -39,7 +39,7 @@ export async function POST(
         data: {
           status: 'ACTIVE',
           activated_at: now,
-          last_profit_at: now,
+          last_profit_at: null, // Cambiado: No debe recibir ganancia al aprobar
         },
       })
 

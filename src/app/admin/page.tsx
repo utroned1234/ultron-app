@@ -467,6 +467,7 @@ export default function AdminPage() {
           already_run: !!data.already_run,
           last_run_at: data.last_run_at || null,
           next_unlock: data.next_unlock,
+          payment_details: data.payment_details || [],
         })
       }
     } catch (error) {
@@ -1047,8 +1048,8 @@ export default function AdminPage() {
                       {processing
                         ? 'Procesando...'
                         : dailyProfitStatus?.already_run
-                          ? '🔒 Bloqueado hasta 1:00 AM (Bolivia)'
-                          : '▶️ Actualizar Ganancias Diarias'}
+                        ? '🔒 Ya ejecutado hoy'
+                        : '▶️ Actualizar Ganancias Diarias'}
                     </Button>
                   </div>
                 </Card>
