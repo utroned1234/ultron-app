@@ -92,6 +92,30 @@ interface BonusRule {
   percentage: number
 }
 
+interface UserDailyStatus {
+  user_id: string
+  user_code: string
+  username: string
+  full_name: string
+  email: string
+  vip_packages: {
+    purchase_id: string
+    level: number
+    name: string
+    daily_profit_bs: number
+    investment_bs: number
+    received_today: boolean
+    last_profit_at: string | null
+  }[]
+  balance_before: number
+  total_daily_profit: number
+  balance_after: number
+  percentage_increase: number
+  can_receive_profit: boolean
+  all_received_today: boolean
+  last_profit_at: string | null
+}
+
 export default function AdminPage() {
   const router = useRouter()
   const [tab, setTab] = useState<Tab>('purchases')
@@ -112,24 +136,14 @@ export default function AdminPage() {
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null)
   const [purchaseSearch, setPurchaseSearch] = useState('')
   const [activeSearch, setActiveSearch] = useState('')
-  const [dailyProfitStatus, setDailyProfitStatus] = useState<{
-    already_run: boolean
-    last_run_at: string | null
-    next_unlock?: string
-    processed?: number
-    synced?: number
-    payment_details?: Array<{
-      user_code: string
-      username: string
-      full_name: string
-      email: string
-      vip_level: number
-      balance_before: number
-      amount_paid: number
-      balance_after: number
-      purchase_id: string
-    }>
-  } | null>(null)
+  const [usersDailyStatus, setUsersDailyStatus] = useState<UserDailyStatus[]>([])
+  const [dailyStatusSummary, setDailyStatusSummary] = useState<{
+    total_users: number
+    users_pending: number
+    users_completed: number
+  }>({ total_users: 0, users_pending: 0, users_completed: 0 })
+  const [dailySearch, setDailySearch] = useState('')
+  const [payingUserId, setPayingUserId] = useState<string | null>(null)
   const pageSize = 30
   const [purchasesOffset, setPurchasesOffset] = useState(0)
   const [purchasesHasMore, setPurchasesHasMore] = useState(true)
@@ -183,7 +197,7 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (token && tab === 'daily-profit') {
-      fetchDailyProfitStatus()
+      fetchUsersDailyStatus()
     }
   }, [tab, token])
 
@@ -456,22 +470,82 @@ export default function AdminPage() {
     }
   }
 
-  const fetchDailyProfitStatus = async () => {
+  const fetchUsersDailyStatus = async () => {
+    setLoading(true)
     try {
-      const res = await fetch('/api/admin/run-daily-profit', {
+      const res = await fetch('/api/admin/users-daily-status', {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (res.ok) {
         const data = await res.json()
-        setDailyProfitStatus({
-          already_run: !!data.already_run,
-          last_run_at: data.last_run_at || null,
-          next_unlock: data.next_unlock,
-          payment_details: data.payment_details || [],
+        setUsersDailyStatus(data.users || [])
+        setDailyStatusSummary({
+          total_users: data.total_users || 0,
+          users_pending: data.users_pending || 0,
+          users_completed: data.users_completed || 0,
         })
       }
     } catch (error) {
-      console.error('Error fetching daily profit status:', error)
+      console.error('Error fetching users daily status:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handlePayUserDaily = async (userId: string, username: string) => {
+    if (!confirm(`¿Abonar ganancias diarias a ${username}?`)) return
+
+    setPayingUserId(userId)
+    try {
+      const res = await fetch('/api/admin/pay-user-daily', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ user_id: userId }),
+      })
+
+      const data = await res.json()
+
+      if (res.ok) {
+        showToast(
+          `✅ Abonado Bs ${data.total_paid.toFixed(2)} a ${username}`,
+          'success'
+        )
+        // Actualizar el estado local del usuario
+        setUsersDailyStatus(prev =>
+          prev.map(user =>
+            user.user_id === userId
+              ? {
+                  ...user,
+                  can_receive_profit: false,
+                  all_received_today: true,
+                  balance_before: data.balance_after,
+                  total_daily_profit: 0,
+                  balance_after: data.balance_after,
+                  last_profit_at: data.paid_at,
+                }
+              : user
+          )
+        )
+        setDailyStatusSummary(prev => ({
+          ...prev,
+          users_pending: Math.max(0, prev.users_pending - 1),
+          users_completed: prev.users_completed + 1,
+        }))
+      } else {
+        if (data.already_paid) {
+          showToast('Usuario ya recibió sus ganancias hoy', 'info')
+          fetchUsersDailyStatus()
+        } else {
+          showToast(data.error || 'Error al procesar pago', 'error')
+        }
+      }
+    } catch (error) {
+      showToast('Error de conexión', 'error')
+    } finally {
+      setPayingUserId(null)
     }
   }
 
@@ -582,48 +656,16 @@ export default function AdminPage() {
     { key: 'news' as const, label: 'Noticias', icon: '📰' },
   ]
 
-  const handleRunDailyProfit = async () => {
-    if (!confirm('¿Actualizar ganancias diarias ahora?')) return
-
-    setProcessing(true)
-    try {
-      const token = getToken()
-      const res = await fetch('/api/admin/run-daily-profit', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+  const filteredDailyUsers = dailySearch.trim()
+    ? usersDailyStatus.filter((user) => {
+        const query = dailySearch.trim().toLowerCase()
+        return (
+          user.username.toLowerCase().includes(query) ||
+          user.full_name.toLowerCase().includes(query) ||
+          user.user_code.toLowerCase().includes(query)
+        )
       })
-
-      if (res.ok) {
-        const data = await res.json().catch(() => null)
-        if (data?.already_run) {
-          const nextUnlockDate = data.next_unlock ? new Date(data.next_unlock) : null
-          const unlockMsg = nextUnlockDate
-            ? ` Disponible a la 1:00 AM (Bolivia)`
-            : ''
-          showToast(`Ganancias ya actualizadas.${unlockMsg}`, 'info')
-        } else {
-          showToast(
-            `✅ Ganancias procesadas: ${data?.processed ?? 0} usuarios | Sincronizados: ${data?.synced ?? 0}`,
-            'success'
-          )
-        }
-        setDailyProfitStatus({
-          already_run: !!data?.already_run,
-          last_run_at: data?.last_run_at || null,
-          next_unlock: data?.next_unlock,
-          processed: data?.processed,
-          synced: data?.synced,
-          payment_details: data?.payment_details || [],
-        })
-      } else {
-        showToast('Error al procesar ganancias', 'error')
-      }
-    } catch (error) {
-      showToast('Error de conexión', 'error')
-    } finally {
-      setProcessing(false)
-    }
-  }
+    : usersDailyStatus
 
   const handleCreateNews = async () => {
     if (!newsTitle || !newsBody) {
@@ -997,133 +1039,166 @@ export default function AdminPage() {
 
             {tab === 'daily-profit' && (
               <div className="space-y-4">
+                {/* Resumen */}
                 <Card glassEffect>
-                  <div className="space-y-4 text-center">
-                    <h2 className="text-2xl font-bold text-gold">Actualizar Ganancias Diarias</h2>
-                    <p className="text-sm text-text-secondary">
-                      Aplica las ganancias diarias a todos los usuarios con VIP activo. Usa el porcentaje actual de cada paquete.
-                    </p>
-
-                    {dailyProfitStatus?.already_run && (
-                      <div className="bg-green-500 bg-opacity-10 border border-green-500 border-opacity-30 rounded-lg p-4">
-                        <p className="text-sm text-green-400 font-bold mb-2">
-                          ✅ Ganancias diarias ya actualizadas
-                        </p>
-                        {dailyProfitStatus.next_unlock && (
-                          <p className="text-xs text-text-secondary">
-                            Próxima ejecución disponible: <span className="text-gold font-bold">1:00 AM (Bolivia)</span>
-                          </p>
-                        )}
+                  <div className="space-y-3">
+                    <h2 className="text-xl font-bold text-gold text-center">Ganancias Diarias por Usuario</h2>
+                    <div className="flex justify-around text-center">
+                      <div>
+                        <p className="text-2xl font-bold text-gold">{dailyStatusSummary.total_users}</p>
+                        <p className="text-xs text-text-secondary">Total Usuarios</p>
                       </div>
-                    )}
-
-                    {dailyProfitStatus?.last_run_at && (
-                      <div className="text-xs text-text-secondary space-y-1">
-                        <p>
-                          📅 Última actualización: <span className="text-gold">{new Date(dailyProfitStatus.last_run_at).toLocaleString('es-ES', { timeZone: 'America/La_Paz' })}</span>
-                        </p>
-                        {(dailyProfitStatus.processed !== undefined || dailyProfitStatus.synced !== undefined) && (
-                          <div className="flex items-center justify-center gap-4 mt-2 text-sm">
-                            {dailyProfitStatus.processed !== undefined && (
-                              <span className="text-green-400">
-                                👥 Procesados: <strong>{dailyProfitStatus.processed}</strong>
-                              </span>
-                            )}
-                            {dailyProfitStatus.synced !== undefined && (
-                              <span className="text-blue-400">
-                                🔄 Sincronizados: <strong>{dailyProfitStatus.synced}</strong>
-                              </span>
-                            )}
-                          </div>
-                        )}
+                      <div>
+                        <p className="text-2xl font-bold text-yellow-400">{dailyStatusSummary.users_pending}</p>
+                        <p className="text-xs text-text-secondary">Pendientes</p>
                       </div>
-                    )}
-
-                    <Button
-                      variant="primary"
-                      className="w-full"
-                      onClick={handleRunDailyProfit}
-                      disabled={processing || dailyProfitStatus?.already_run}
-                    >
-                      {processing
-                        ? 'Procesando...'
-                        : dailyProfitStatus?.already_run
-                        ? '🔒 Ya ejecutado hoy'
-                        : '▶️ Actualizar Ganancias Diarias'}
-                    </Button>
-                  </div>
-                </Card>
-
-                <Card className="bg-dark-bg">
-                  <div className="text-sm text-text-secondary space-y-2">
-                    <p className="text-gold font-bold mb-3">ℹ️ Información del Proceso</p>
-                    <p>• Solo se procesan usuarios con VIP activo</p>
-                    <p>• Cada usuario recibe la ganancia diaria según su paquete VIP</p>
-                    <p>• El proceso se ejecuta manualmente por el administrador</p>
-                    <p>• Una vez ejecutado, se bloquea hasta la 1:00 AM (hora Bolivia)</p>
-                    <p>• <strong className="text-gold">Procesados:</strong> Usuarios que recibieron ganancias diarias</p>
-                    <p>• <strong className="text-blue-400">Sincronizados:</strong> Compras cuya ganancia se actualizó al paquete VIP</p>
-                  </div>
-                </Card>
-
-                {dailyProfitStatus?.payment_details && dailyProfitStatus.payment_details.length > 0 && (
-                  <Card glassEffect>
-                    <h3 className="text-xl font-bold text-gold mb-4">
-                      💰 Detalles de Pagos Procesados ({dailyProfitStatus.payment_details.length})
-                    </h3>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b border-gold border-opacity-30">
-                            <th className="text-left py-3 px-2 text-gold font-bold uppercase text-xs">Código</th>
-                            <th className="text-left py-3 px-2 text-gold font-bold uppercase text-xs">Usuario</th>
-                            <th className="text-left py-3 px-2 text-gold font-bold uppercase text-xs">Nombre</th>
-                            <th className="text-center py-3 px-2 text-gold font-bold uppercase text-xs">VIP</th>
-                            <th className="text-right py-3 px-2 text-gold font-bold uppercase text-xs">Balance Antes</th>
-                            <th className="text-right py-3 px-2 text-gold font-bold uppercase text-xs">Monto Pagado</th>
-                            <th className="text-right py-3 px-2 text-gold font-bold uppercase text-xs">Balance Después</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {dailyProfitStatus.payment_details.map((payment, index) => (
-                            <tr
-                              key={payment.purchase_id}
-                              className={`border-b border-gold border-opacity-10 ${index % 2 === 0 ? 'bg-gold bg-opacity-5' : ''}`}
-                            >
-                              <td className="py-3 px-2 text-text-secondary font-mono text-xs">{payment.user_code}</td>
-                              <td className="py-3 px-2 text-text-primary font-medium">{payment.username}</td>
-                              <td className="py-3 px-2 text-text-secondary">{payment.full_name}</td>
-                              <td className="py-3 px-2 text-center">
-                                <span className="inline-block bg-gold bg-opacity-20 text-gold-bright px-2 py-1 rounded font-bold text-xs">
-                                  VIP {payment.vip_level}
-                                </span>
-                              </td>
-                              <td className="py-3 px-2 text-right text-text-secondary font-mono">
-                                Bs {payment.balance_before.toFixed(2)}
-                              </td>
-                              <td className="py-3 px-2 text-right font-bold text-green-400 font-mono">
-                                + Bs {payment.amount_paid.toFixed(2)}
-                              </td>
-                              <td className="py-3 px-2 text-right text-gold-bright font-bold font-mono">
-                                Bs {payment.balance_after.toFixed(2)}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                        <tfoot>
-                          <tr className="border-t-2 border-gold border-opacity-50 bg-gold bg-opacity-10">
-                            <td colSpan={5} className="py-3 px-2 text-right font-bold text-gold uppercase text-sm">
-                              Total Pagado:
-                            </td>
-                            <td className="py-3 px-2 text-right font-bold text-gold-bright text-lg font-mono">
-                              Bs {dailyProfitStatus.payment_details.reduce((sum, p) => sum + p.amount_paid, 0).toFixed(2)}
-                            </td>
-                            <td></td>
-                          </tr>
-                        </tfoot>
-                      </table>
+                      <div>
+                        <p className="text-2xl font-bold text-green-400">{dailyStatusSummary.users_completed}</p>
+                        <p className="text-xs text-text-secondary">Abonados Hoy</p>
+                      </div>
                     </div>
+                  </div>
+                </Card>
+
+                {/* Búsqueda */}
+                <Card glassEffect>
+                  <div className="space-y-2">
+                    <Input
+                      label="Buscar usuario"
+                      type="text"
+                      value={dailySearch}
+                      onChange={(e) => setDailySearch(e.target.value)}
+                      placeholder="Código, usuario o nombre"
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        className="flex-1"
+                        onClick={() => setDailySearch('')}
+                      >
+                        Limpiar
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="flex-1"
+                        onClick={() => fetchUsersDailyStatus()}
+                        disabled={loading}
+                      >
+                        Actualizar Lista
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+
+                {/* Info */}
+                <Card className="bg-dark-bg">
+                  <div className="text-xs text-text-secondary space-y-1">
+                    <p className="text-gold font-bold">Abono manual de ganancias diarias</p>
+                    <p>El botón se bloquea hasta la 1:00 AM (Bolivia) después de abonar</p>
+                  </div>
+                </Card>
+
+                {/* Lista de usuarios */}
+                {filteredDailyUsers.length === 0 ? (
+                  <Card>
+                    <p className="text-center text-text-secondary">
+                      {loading ? 'Cargando usuarios...' : 'No hay usuarios con VIP activo'}
+                    </p>
                   </Card>
+                ) : (
+                  filteredDailyUsers.map((user) => (
+                    <Card key={user.user_id} glassEffect className="p-3">
+                      <div className="space-y-3">
+                        {/* Header del usuario */}
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="text-[10px] text-text-secondary font-mono">{user.user_code}</p>
+                            <h3 className="text-sm font-bold text-gold">{user.full_name}</h3>
+                            <p className="text-xs text-text-secondary">@{user.username}</p>
+                          </div>
+                          <div className={`px-2 py-1 rounded text-[10px] font-bold ${
+                            user.can_receive_profit
+                              ? 'bg-yellow-500 bg-opacity-20 text-yellow-400 border border-yellow-500 border-opacity-30'
+                              : 'bg-green-500 bg-opacity-20 text-green-400 border border-green-500 border-opacity-30'
+                          }`}>
+                            {user.can_receive_profit ? 'PENDIENTE' : 'ABONADO'}
+                          </div>
+                        </div>
+
+                        {/* VIPs del usuario */}
+                        <div className="space-y-1">
+                          <p className="text-[10px] text-text-secondary uppercase tracking-wider">Paquetes VIP Activos:</p>
+                          <div className="flex flex-wrap gap-1">
+                            {user.vip_packages.map((vip, idx) => (
+                              <span
+                                key={idx}
+                                className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  vip.received_today
+                                    ? 'bg-green-500 bg-opacity-20 text-green-400'
+                                    : 'bg-gold bg-opacity-20 text-gold'
+                                }`}
+                              >
+                                {vip.name} (+Bs {vip.daily_profit_bs.toFixed(2)}/día)
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Detalles de ganancias */}
+                        <div className="bg-dark-card bg-opacity-50 rounded p-2 space-y-1 text-[10px]">
+                          <div className="flex justify-between">
+                            <span className="text-text-secondary">Balance Actual:</span>
+                            <span className="text-text-primary font-mono">Bs {user.balance_before.toFixed(2)}</span>
+                          </div>
+                          {user.can_receive_profit && (
+                            <>
+                              <div className="flex justify-between">
+                                <span className="text-text-secondary">Ganancia a Abonar:</span>
+                                <span className="text-green-400 font-bold font-mono">+ Bs {user.total_daily_profit.toFixed(2)}</span>
+                              </div>
+                              <div className="flex justify-between border-t border-gold border-opacity-20 pt-1">
+                                <span className="text-text-secondary">Balance Después:</span>
+                                <span className="text-gold font-bold font-mono">Bs {user.balance_after.toFixed(2)}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-text-secondary">Incremento:</span>
+                                <span className="text-gold font-bold">+{user.percentage_increase.toFixed(2)}%</span>
+                              </div>
+                            </>
+                          )}
+                          {user.last_profit_at && (
+                            <div className="flex justify-between text-[9px] pt-1 border-t border-gold border-opacity-10">
+                              <span className="text-text-secondary">Último abono:</span>
+                              <span className="text-text-secondary">
+                                {new Date(user.last_profit_at).toLocaleString('es-ES', {
+                                  day: '2-digit',
+                                  month: '2-digit',
+                                  year: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                  timeZone: 'America/La_Paz'
+                                })}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Botón de abonar */}
+                        <Button
+                          variant={user.can_receive_profit ? 'primary' : 'outline'}
+                          className="w-full"
+                          onClick={() => handlePayUserDaily(user.user_id, user.username)}
+                          disabled={!user.can_receive_profit || payingUserId === user.user_id}
+                        >
+                          {payingUserId === user.user_id
+                            ? 'Procesando...'
+                            : user.can_receive_profit
+                            ? `Abonar Bs ${user.total_daily_profit.toFixed(2)}`
+                            : 'Abonado - Disponible a la 1:00 AM'}
+                        </Button>
+                      </div>
+                    </Card>
+                  ))
                 )}
               </div>
             )}

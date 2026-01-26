@@ -300,32 +300,34 @@ export async function GET(req: NextRequest) {
         }
       })
 
-      // Reconstruir payment_details con balances
-      const userBalanceMap = new Map<string, number>()
+      // OPTIMIZACIÓN: Obtener todos los balances de una vez
+      const uniqueUserIds = [...new Set(profits.map(p => p.user_id))]
 
+      // Obtener balance total hasta el inicio de esta ejecución para cada usuario
+      const allBalances = await prisma.walletLedger.groupBy({
+        by: ['user_id'],
+        where: {
+          user_id: { in: uniqueUserIds },
+          created_at: { lt: startTime }
+        },
+        _sum: { amount_bs: true }
+      })
+
+      const initialBalanceMap = new Map(
+        allBalances.map(b => [b.user_id, b._sum.amount_bs ?? 0])
+      )
+
+      // Inicializar balances actuales con balances iniciales
+      const currentBalanceMap = new Map<string, number>()
+      uniqueUserIds.forEach(userId => {
+        currentBalanceMap.set(userId, initialBalanceMap.get(userId) ?? 0)
+      })
+
+      // Reconstruir payment_details
       for (const profit of profits) {
-        // Calcular balance antes de este pago
-        let balanceBefore: number
-        if (userBalanceMap.has(profit.user_id)) {
-          balanceBefore = userBalanceMap.get(profit.user_id)!
-        } else {
-          // Obtener balance hasta antes de esta transacción
-          const ledgerEntries = await prisma.walletLedger.findMany({
-            where: {
-              user_id: profit.user_id,
-              created_at: {
-                lt: profit.created_at
-              }
-            },
-            select: {
-              amount_bs: true
-            }
-          })
-          balanceBefore = ledgerEntries.reduce((sum, entry) => sum + entry.amount_bs, 0)
-        }
-
+        const balanceBefore = currentBalanceMap.get(profit.user_id) ?? 0
         const balanceAfter = balanceBefore + profit.amount_bs
-        userBalanceMap.set(profit.user_id, balanceAfter)
+        currentBalanceMap.set(profit.user_id, balanceAfter)
 
         // Extraer el VIP level de la descripción
         const vipMatch = profit.description?.match(/VIP (\d+)/)
